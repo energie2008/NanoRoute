@@ -1,9 +1,15 @@
 port: 30128
 log_level: info  # debug / info / warn
 
-# 管理后台密码（设置后访问仪表盘和配置页需要密码，API接口不受影响）
+# 管理后台密码（设置后访问仪表盘和配置页需要密码）
 # 默认密码: 123456，安装后请立即修改
 admin_password: "123456"
+
+# API 访问密钥列表（设置后调用/v1/*接口必须携带API Key）
+# 支持多个密钥，用Authorization: Bearer <your-key> 或 X-API-Key: <your-key> 头部传递
+# api_keys:
+#   - "sk-nanoroute-your-secret-key-here"
+#   - "sk-another-key-for-different-user"
 
 # 路由策略
 routing:

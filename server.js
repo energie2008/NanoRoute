@@ -133,10 +133,22 @@ const server = createServer(async (req, res) => {
       }
     }
 
+    // API Key authentication for /v1/* endpoints
+    const apiKeys = config.api_keys || (process.env.API_KEYS ? process.env.API_KEYS.split(',') : []);
+    const isApiPath = path.startsWith('/v1/');
+    if (apiKeys.length > 0 && isApiPath) {
+      const authHeader = req.headers.authorization || '';
+      const providedKey = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : (req.headers['x-api-key'] || '');
+      if (!apiKeys.includes(providedKey)) {
+        sendError(res, 401, 'Invalid API key. Please provide a valid API key in Authorization: Bearer <key> header.');
+        return;
+      }
+    }
+
     if (path === '/healthz' || path === '/health') {
       sendJSON(res, {
         status: 'ok',
-        version: '0.2.0',
+        version: '0.3.0',
         uptime_s: Math.floor(process.uptime()),
         memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
         providers: api._config.providers ? api._config.providers.length : 0,
