@@ -11,3 +11,10 @@ config.yml.bak
 *.tar.gz
 nanoroute-backup-*/
 test-save.js
+
+# 本地临时文件和密钥
+*.sh
+*.pem
+key/
+nanoroute-build.tar.gz
+nanoroute-nginx.conf
