@@ -1,0 +1,110 @@
+port: 30128
+log_level: info  # debug / info / warn
+
+# 管理后台密码（设置后访问仪表盘和配置页需要密码，API接口不受影响）
+# 默认密码: 123456，安装后请立即修改
+admin_password: "123456"
+
+# 路由策略
+routing:
+  default_strategy: round-robin    # round-robin / priority / cost-opt
+  sticky_limit: 1                  # 每个 Key 连续使用次数（建议1）
+  combo_sticky_limit: 1            # Combo 内每模型使用次数
+  fallback_on: [429, 503, 504]     # 触发 fallback 的状态码
+
+# Provider 定义（支持多账户多项目）
+providers:
+  - id: gemini-35-key1
+    type: gemini
+    api_key: "AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+    model: gemini-2.0-flash-exp
+    group: primary
+    weight: 1
+    rpd_limit: 1500
+    rpm_limit: 15
+
+  - id: gemini-35-key2
+    type: gemini
+    api_key: "AIzaSyYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY"
+    model: gemini-2.0-flash-exp
+    group: primary
+    weight: 1
+    rpd_limit: 1500
+    rpm_limit: 15
+
+  - id: gemini-35-key3
+    type: gemini
+    api_key: "AIzaSyZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
+    model: gemini-2.0-flash-exp
+    group: primary
+    weight: 1
+    rpd_limit: 1500
+    rpm_limit: 15
+
+  - id: gemini-35-key4
+    type: gemini
+    api_key: "AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    model: gemini-2.0-flash-exp
+    group: primary
+    weight: 1
+    rpd_limit: 1500
+    rpm_limit: 15
+
+  - id: gemini-35-key5
+    type: gemini
+    api_key: "AIzaSyBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+    model: gemini-2.0-flash-exp
+    group: primary
+    weight: 1
+    rpd_limit: 1500
+    rpm_limit: 15
+
+  - id: gemini-35-key6
+    type: gemini
+    api_key: "AIzaSyCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+    model: gemini-2.0-flash-exp
+    group: primary
+    weight: 1
+    rpd_limit: 1500
+    rpm_limit: 15
+
+  - id: gemini-35-key7
+    type: gemini
+    api_key: "AIzaSyDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+    model: gemini-2.0-flash-exp
+    group: primary
+    weight: 1
+    rpd_limit: 1500
+    rpm_limit: 15
+
+  - id: gemini-35-key8
+    type: gemini
+    api_key: "AIzaSyEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
+    model: gemini-2.0-flash-exp
+    group: primary
+    weight: 1
+    rpd_limit: 1500
+    rpm_limit: 15
+
+# Combo 定义（模型组合）
+combos:
+  - id: gemini-primary
+    models: 
+      - gemini-35-key1
+      - gemini-35-key2
+      - gemini-35-key3
+      - gemini-35-key4
+      - gemini-35-key5
+      - gemini-35-key6
+      - gemini-35-key7
+      - gemini-35-key8
+    strategy: round-robin
+
+# Model Alias（客户端发什么模型名都能正确路由）
+aliases:
+  claude-sonnet-4: gemini-primary
+  claude-sonnet-4-5: gemini-primary
+  claude-3-5-sonnet: gemini-primary
+  gpt-4o: gemini-primary
+  gpt-4o-mini: gemini-primary
+  gemini-2.0-flash-exp: gemini-primary

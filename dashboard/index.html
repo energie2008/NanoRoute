@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NanoRoute · 仪表盘</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --font:   'Geist',system-ui,sans-serif;
+  --mono:   'Geist Mono',monospace;
+  --xs:.75rem;--sm:.875rem;--base:1rem;--lg:1.25rem;--xl:1.75rem;
+  --r-sm:.375rem;--r-md:.5rem;--r-lg:.75rem;--r-xl:1rem;--r-full:9999px;
+  --t:160ms cubic-bezier(.16,1,.3,1);
+}
+[data-theme=dark]{
+  --bg:#0f1011;--sur:#161719;--sur2:#1c1e20;--off:#222427;--dyn:#2a2d30;
+  --div:#262a2d;--bdr:#303438;
+  --tx:#e2e4e7;--txm:#7a7f87;--txf:#4a4f57;
+  --pri:#3d9cf0;--pri-h:#5aabf5;--pri-d:#1a3a5c;
+  --ok:#3ecf6f;--ok-d:#113322;
+  --warn:#f0a53d;--warn-d:#3d2a10;
+  --err:#f0504a;--err-d:#3d1515;
+  --pur:#a78bfa;--pur-d:#2d1f4a;
+  --sh:0 4px 14px oklch(0 0 0/.4);
+}
+[data-theme=light]{
+  --bg:#f4f5f7;--sur:#fff;--sur2:#f9fafb;--off:#eef0f3;--dyn:#e4e7ec;
+  --div:#dde0e6;--bdr:#d0d4db;
+  --tx:#1a1d21;--txm:#6b7280;--txf:#b0b7c3;
+  --pri:#1d6fb8;--pri-h:#1560a0;--pri-d:#dbeafe;
+  --ok:#1a7a40;--ok-d:#dcfce7;
+  --warn:#b45309;--warn-d:#fef3c7;
+  --err:#b91c1c;--err-d:#fee2e2;
+  --pur:#7c3aed;--pur-d:#ede9fe;
+  --sh:0 4px 14px oklch(.2 .01 220/.1);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased}
+body{font-family:var(--font);font-size:var(--sm);color:var(--tx);background:var(--bg);min-height:100dvh;display:flex;flex-direction:column}
+button{cursor:pointer;border:none;background:none;font:inherit;color:inherit}
+a{text-decoration:none;color:inherit}
+:focus-visible{outline:2px solid var(--pri);outline-offset:3px;border-radius:var(--r-sm)}
+
+.topbar{
+  height:52px;display:flex;align-items:center;gap:1rem;
+  padding:0 1.5rem;
+  background:color-mix(in oklch,var(--bg) 85%,transparent);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--div);
+  position:sticky;top:0;z-index:30;
+}
+.topbar-logo{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:var(--base);letter-spacing:-.02em}
+.topbar-logo svg{color:var(--pri)}
+.ver{font-size:var(--xs);background:var(--off);color:var(--txf);padding:1px 7px;border-radius:var(--r-full);font-family:var(--mono)}
+.tab-bar{display:flex;gap:2px;margin-left:1.5rem}
+.tab{
+  padding:.4rem .85rem;border-radius:var(--r-md);
+  font-size:var(--xs);font-weight:500;color:var(--txm);cursor:pointer;
+  transition:background var(--t),color var(--t);
+}
+.tab:hover{background:var(--off);color:var(--tx)}
+.tab.active{background:var(--pri-d);color:var(--pri)}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:.5rem}
+.btn{
+  display:inline-flex;align-items:center;gap:.3rem;
+  padding:.45rem .9rem;border-radius:var(--r-md);
+  font-size:var(--xs);font-weight:500;border:1px solid transparent;
+  transition:all var(--t);
+}
+.btn-ghost{color:var(--txm);border-color:var(--bdr);background:var(--sur)}
+.btn-ghost:hover{color:var(--tx);background:var(--off)}
+.btn-primary{background:var(--pri);color:#fff}
+.btn-primary:hover{opacity:.88}
+.btn-danger{background:var(--err-d);color:var(--err);border-color:var(--err)}
+.btn-danger:hover{background:var(--err);color:#fff}
+.btn-sm{padding:.3rem .65rem;font-size:11px}
+.btn-icon{padding:.4rem;border-radius:var(--r-md)}
+
+.content{flex:1;padding:1.5rem;max-width:1200px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:1.5rem}
+.cfg-section{display:none}
+.cfg-section.active{display:flex;flex-direction:column;gap:1.5rem}
+
+.card{background:var(--sur);border:1px solid var(--bdr);border-radius:var(--r-lg);box-shadow:var(--sh);overflow:hidden}
+.card-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:.85rem 1.25rem;border-bottom:1px solid var(--div);
+}
+.card-title{font-size:var(--sm);font-weight:600}
+.card-body{padding:1.25rem}
+.card-body-flush{padding:0}
+
+.stats-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;
+}
+@media(max-width:900px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:500px){.stats-grid{grid-template-columns:1fr}}
+.stat-card{
+  background:var(--sur);border:1px solid var(--bdr);border-radius:var(--r-lg);
+  padding:1.25rem;box-shadow:var(--sh);display:flex;flex-direction:column;gap:.5rem;
+}
+.stat-label{font-size:var(--xs);color:var(--txm);font-weight:500;text-transform:uppercase;letter-spacing:.05em}
+.stat-value{font-size:var(--xl);font-weight:700;font-family:var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.stat-sub{font-size:var(--xs);color:var(--txf);font-family:var(--mono)}
+
+.chart-container{
+  height:240px;position:relative;
+  background:var(--bg);border:1px solid var(--bdr);border-radius:var(--r-md);
+  padding:1rem;
+}
+canvas{width:100%!important;height:100%!important}
+
+.badge{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:var(--r-full);font-size:11px;font-weight:600;font-family:var(--mono)}
+.b-ok{background:var(--ok-d);color:var(--ok)}
+.b-warn{background:var(--warn-d);color:var(--warn)}
+.b-err{background:var(--err-d);color:var(--err)}
+.b-info{background:var(--pri-d);color:var(--pri)}
+.b-pur{background:var(--pur-d);color:var(--pur)}
+.b-neu{background:var(--dyn);color:var(--txm)}
+
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:var(--xs)}
+thead{background:var(--sur2)}
+th{padding:.6rem 1rem;text-align:left;font-weight:600;color:var(--txm);text-transform:uppercase;letter-spacing:.05em;font-size:10px;border-bottom:1px solid var(--bdr);white-space:nowrap}
+td{padding:.6rem 1rem;border-bottom:1px solid var(--div);font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:none}
+tbody tr:hover{background:var(--sur2)}
+.td-mono{font-family:var(--mono);font-size:11px}
+.td-m{color:var(--txm)}
+.td-center{text-align:center}
+
+.progress-bar{
+  height:6px;background:var(--dyn);border-radius:var(--r-full);overflow:hidden;
+}
+.progress-fill{
+  height:100%;border-radius:var(--r-full);transition:width .3s ease;
+}
+.p-ok{background:var(--ok)}
+.p-warn{background:var(--warn)}
+.p-err{background:var(--err)}
+.p-info{background:var(--pri)}
+
+.toast-wrap{position:fixed;bottom:1.5rem;right:1.5rem;z-index:100;display:flex;flex-direction:column;gap:.5rem;pointer-events:none}
+.toast{
+  background:var(--sur);border:1px solid var(--bdr);border-radius:var(--r-lg);
+  padding:.65rem 1rem;font-size:var(--xs);display:flex;align-items:center;gap:.5rem;
+  box-shadow:var(--sh);pointer-events:all;
+  animation:toast-in .3s cubic-bezier(.16,1,.3,1);
+}
+.toast-ok{border-left:3px solid var(--ok)}
+.toast-err{border-left:3px solid var(--err)}
+@keyframes toast-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+.endpoint-box{
+  background:var(--bg);border:1px solid var(--bdr);border-radius:var(--r-md);
+  padding:.75rem 1rem;font-family:var(--mono);font-size:var(--xs);
+  display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem;
+}
+.endpoint-method{font-weight:700;padding:2px 8px;border-radius:var(--r-sm);font-size:10px;text-transform:uppercase}
+.m-get{background:var(--ok-d);color:var(--ok)}
+.m-post{background:var(--pri-d);color:var(--pri)}
+.endpoint-path{flex:1;letter-spacing:.01em}
+
+.online-dot{width:8px;height:8px;border-radius:50%;background:var(--ok);display:inline-block;box-shadow:0 0 8px var(--ok);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.offline-dot{width:8px;height:8px;border-radius:50%;background:var(--err)}
+.cooldown-dot{width:8px;height:8px;border-radius:50%;background:var(--warn);box-shadow:0 0 8px var(--warn)}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-logo">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+    </svg>
+    NanoRoute
+    <span class="ver">v0.2</span>
+    <span style="display:inline-flex;align-items:center;gap:4px;margin-left:.5rem">
+      <span class="online-dot"></span>
+      <span style="font-size:var(--xs);color:var(--txm);font-weight:500">运行中</span>
+    </span>
+  </div>
+  <nav class="tab-bar">
+    <div class="tab active" onclick="showTab('overview',this)">概览</div>
+    <div class="tab" onclick="showTab('providers',this)">提供商</div>
+    <div class="tab" onclick="showTab('endpoints',this)">接口</div>
+    <div class="tab" onclick="showTab('logs',this)">日志</div>
+  </nav>
+  <div class="topbar-right">
+    <a href="/config" class="btn btn-ghost btn-sm">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      配置管理
+    </a>
+    <button class="btn btn-ghost btn-sm" onclick="toggleTheme()">
+      <svg id="ti" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+    <button class="btn btn-ghost btn-sm" onclick="refresh()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      刷新
+    </button>
+  </div>
+</header>
+
+<div class="content">
+
+<div class="cfg-section active" id="tab-overview">
+  <div class="stats-grid">
+    <div class="stat-card">
+      <span class="stat-label">总请求数</span>
+      <span class="stat-value" id="stat-total">0</span>
+      <span class="stat-sub" id="stat-tps">0 req/s</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">成功率</span>
+      <span class="stat-value" id="stat-sr" style="color:var(--ok)">0%</span>
+      <span class="stat-sub">过去24小时</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">活跃提供商</span>
+      <span class="stat-value" id="stat-providers">0</span>
+      <span class="stat-sub">在线 / 总数</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-label">平均响应时间</span>
+      <span class="stat-value" id="stat-latency">0ms</span>
+      <span class="stat-sub">P95 延迟</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">请求趋势</span>
+      <div style="display:flex;gap:.5rem">
+        <select id="trend-range" class="input input-mono" style="width:120px;font-size:11px" onchange="refreshTrend()">
+          <option value="60">最近1分钟</option>
+          <option value="300" selected>最近5分钟</option>
+          <option value="3600">最近1小时</option>
+        </select>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="chart-container">
+        <canvas id="trendChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">熔断状态</span>
+      <button class="btn btn-ghost btn-sm" onclick="resetAllCb()">重置全部熔断</button>
+    </div>
+    <div class="card-body-flush table-wrap" id="cb-container">
+      <table id="cb-table">
+        <thead><tr>
+          <th>类型</th><th>目标</th><th>状态</th><th>剩余时间</th><th>失败次数</th><th>操作</th>
+        </tr></thead>
+        <tbody id="cb-tbody">
+          <tr><td colspan="6" class="td-m td-center" style="padding:2rem">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="cfg-section" id="tab-providers">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">提供商状态</span>
+    </div>
+    <div class="card-body-flush table-wrap">
+      <table>
+        <thead><tr>
+          <th>状态</th><th>ID</th><th>类型</th><th>模型</th><th>优先级</th>
+          <th>请求数</th><th>成功率</th><th>今日用量</th><th>RPD 剩余</th><th>RPM 剩余</th><th>平均延迟</th>
+        </tr></thead>
+        <tbody id="provider-tbody">
+          <tr><td colspan="11" class="td-m td-center" style="padding:2rem">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="cfg-section" id="tab-endpoints">
+  <div class="card">
+    <div class="card-header"><span class="card-title">API 端点</span></div>
+    <div class="card-body">
+      <div class="endpoint-box">
+        <span class="endpoint-method m-post">POST</span>
+        <span class="endpoint-path">/v1/chat/completions</span>
+        <span class="badge b-ok">Chat Completions</span>
+      </div>
+      <div class="endpoint-box">
+        <span class="endpoint-method m-get">GET</span>
+        <span class="endpoint-path">/api/stats</span>
+        <span class="badge b-info">状态统计</span>
+      </div>
+      <div class="endpoint-box">
+        <span class="endpoint-method m-get">GET</span>
+        <span class="endpoint-path">/api/config</span>
+        <span class="badge b-info">读取配置</span>
+      </div>
+      <div class="endpoint-box">
+        <span class="endpoint-method m-post">POST</span>
+        <span class="endpoint-path">/api/config</span>
+        <span class="badge b-info">保存配置</span>
+      </div>
+      <div class="endpoint-box">
+        <span class="endpoint-method m-post">POST</span>
+        <span class="endpoint-path">/api/config/validate</span>
+        <span class="badge b-info">验证配置</span>
+      </div>
+      <div class="endpoint-box">
+        <span class="endpoint-method m-post">POST</span>
+        <span class="endpoint-path">/api/cb/reset</span>
+        <span class="badge b-pur">熔断控制</span>
+      </div>
+      <div class="endpoint-box">
+        <span class="endpoint-method m-get">GET</span>
+        <span class="endpoint-path">/mcp</span>
+        <span class="badge b-pur">MCP Server (SSE)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">服务信息</span></div>
+    <div class="card-body">
+      <div class="form-row cols-3">
+        <div class="field">
+          <label class="label">监听地址</label>
+          <div class="input-prefix">
+            <span class="input-prefix-label" id="srv-host">http://localhost</span>
+            <input type="text" class="input input-mono" id="srv-port" value="20128" readonly style="width:80px">
+          </div>
+        </div>
+        <div class="field">
+          <label class="label">API Base URL</label>
+          <input type="text" class="input input-mono" id="api-base" value="http://localhost:20128/v1" readonly>
+        </div>
+        <div class="field">
+          <label class="label">内存使用</label>
+          <input type="text" class="input input-mono" id="mem-usage" value="- MB" readonly>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="cfg-section" id="tab-logs">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">最近请求日志</span>
+      <button class="btn btn-ghost btn-sm" onclick="loadLogs()">刷新</button>
+    </div>
+    <div class="card-body-flush table-wrap">
+      <table>
+        <thead><tr>
+          <th>时间</th><th>模型</th><th>状态</th><th>提供商</th><th>延迟</th><th>Tokens</th>
+        </tr></thead>
+        <tbody id="logs-tbody">
+          <tr><td colspan="6" class="td-m td-center" style="padding:2rem">加载中...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="toast-wrap" id="toasts"></div>
+
+<script>
+let _theme = 'dark';
+let _trendData = [];
+let _refreshInterval = null;
+
+function toggleTheme() {
+  _theme = _theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', _theme);
+  const ti = document.getElementById('ti');
+  ti.innerHTML = _theme === 'dark'
+    ? '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>'
+    : '<circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>';
+}
+
+function showTab(name, el) {
+  document.querySelectorAll('.cfg-section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  el.classList.add('active');
+  if (name === 'logs') loadLogs();
+}
+
+function toast(msg, type='ok') {
+  const wrap = document.getElementById('toasts');
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.innerHTML = `<span>${msg}</span>`;
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+function fmtBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+  return (b/(1024*1024)).toFixed(1) + ' MB';
+}
+
+function fmtTime(ts) {
+  const d = new Date(ts);
+  return d.toLocaleTimeString('zh-CN', {hour12: false});
+}
+
+function fmtDuration(ms) {
+  if (ms < 1000) return ms + 'ms';
+  return (ms/1000).toFixed(1) + 's';
+}
+
+async function apiGet(path) {
+  const res = await fetch(path);
+  return res.json();
+}
+
+async function apiPost(path, body = {}) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return res.json();
+}
+
+function drawTrend() {
+  const canvas = document.getElementById('trendChart');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  
+  const w = rect.width;
+  const h = rect.height;
+  const padding = {top: 10, right: 20, bottom: 24, left: 40};
+  const chartW = w - padding.left - padding.right;
+  const chartH = h - padding.top - padding.bottom;
+  
+  ctx.clearRect(0, 0, w, h);
+  
+  if (_trendData.length < 2) {
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--txf');
+    ctx.font = '12px Geist, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('等待数据...', w/2, h/2);
+    return;
+  }
+  
+  const maxVal = Math.max(..._trendData.map(d => d.total), 1);
+  const minTime = _trendData[0].ts;
+  const maxTime = _trendData[_trendData.length-1].ts;
+  const timeRange = maxTime - minTime || 1;
+  
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--bdr');
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = padding.top + (chartH * i / 4);
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(w - padding.right, y);
+    ctx.stroke();
+    
+    const val = Math.round(maxVal * (1 - i/4));
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--txf');
+    ctx.font = '10px Geist Mono, monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(val, padding.left - 8, y);
+  }
+  
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--pri');
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  
+  _trendData.forEach((d, i) => {
+    const x = padding.left + ((d.ts - minTime) / timeRange) * chartW;
+    const y = padding.top + chartH - (d.total / maxVal) * chartH;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  
+  const grad = ctx.createLinearGradient(0, padding.top, 0, h - padding.bottom);
+  grad.addColorStop(0, getComputedStyle(document.documentElement).getPropertyValue('--pri-d'));
+  grad.addColorStop(1, 'transparent');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  _trendData.forEach((d, i) => {
+    const x = padding.left + ((d.ts - minTime) / timeRange) * chartW;
+    const y = padding.top + chartH - (d.total / maxVal) * chartH;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.lineTo(w - padding.right, h - padding.bottom);
+  ctx.lineTo(padding.left, h - padding.bottom);
+  ctx.closePath();
+  ctx.fill();
+}
+
+async function refreshTrend() {
+  try {
+    const range = parseInt(document.getElementById('trend-range').value);
+    const data = await apiGet('/api/stats');
+    if (data.ok && data.trend) {
+      _trendData = data.trend.slice(-Math.floor(range/10));
+    }
+    drawTrend();
+  } catch (e) {
+    console.error('Trend load failed:', e);
+  }
+}
+
+async function loadStats() {
+  try {
+    const data = await apiGet('/api/stats');
+    if (!data.ok) return;
+    
+    document.getElementById('stat-total').textContent = data.total_requests || 0;
+    document.getElementById('stat-sr').textContent = ((data.success_rate || 0) * 100).toFixed(1) + '%';
+    document.getElementById('stat-latency').textContent = Math.round(data.avg_latency || 0) + 'ms';
+    document.getElementById('mem-usage').value = fmtBytes(data.memory_rss || 0);
+    
+    const providers = data.providers || [];
+    const onlineCount = providers.filter(p => p.status === 'ok').length;
+    document.getElementById('stat-providers').textContent = `${onlineCount} / ${providers.length}`;
+    
+    let tps = '0 req/s';
+    if (_trendData.length >= 2) {
+      const recent = _trendData.slice(-6);
+      if (recent.length >= 2) {
+        const timeDiff = (recent[recent.length-1].ts - recent[0].ts) / 1000;
+        const countDiff = recent[recent.length-1].total - recent[0].total;
+        if (timeDiff > 0) {
+          tps = (countDiff / timeDiff).toFixed(1) + ' req/s';
+        }
+      }
+    }
+    document.getElementById('stat-tps').textContent = tps;
+    
+    renderProviders(providers);
+    renderCb(data.cb_state || []);
+  } catch (e) {
+    console.error('Stats load failed:', e);
+  }
+}
+
+function renderProviders(providers) {
+  const tbody = document.getElementById('provider-tbody');
+  if (!providers || providers.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="11" class="td-m td-center" style="padding:2rem">暂无提供商</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = providers.map(p => {
+    let statusDot = '<span class="offline-dot"></span>';
+    let statusBadge = '<span class="badge b-err">离线</span>';
+    if (p.status === 'ok') {
+      statusDot = '<span class="online-dot"></span>';
+      statusBadge = '<span class="badge b-ok">在线</span>';
+    } else if (p.status === 'cooldown') {
+      statusDot = '<span class="cooldown-dot"></span>';
+      statusBadge = '<span class="badge b-warn">冷却</span>';
+    }
+    
+    const sr = ((p.success || 0) / Math.max(p.requests || 1, 1)) * 100;
+    const rpdPct = Math.min(100, (p.rpd_used || 0) / Math.max(p.rpd_limit || 1, 1) * 100);
+    let pClass = 'p-ok';
+    if (rpdPct > 80) pClass = 'p-err';
+    else if (rpdPct > 60) pClass = 'p-warn';
+    
+    return `<tr>
+      <td class="td-center">${statusDot}</td>
+      <td class="td-mono">${p.id}</td>
+      <td><span class="badge b-neu">${p.type}</span></td>
+      <td class="td-mono">${p.model}</td>
+      <td class="td-center"><span class="badge b-info">${p.priority}</span></td>
+      <td class="td-mono">${p.requests || 0}</td>
+      <td>
+        <div class="progress-bar" style="width:80px">
+          <div class="progress-fill p-ok" style="width:${sr}%"></div>
+        </div>
+        <span style="font-size:10px;color:var(--txf);font-family:var(--mono)">${sr.toFixed(0)}%</span>
+      </td>
+      <td class="td-mono">${p.rpd_used || 0}/${p.rpd_limit || '-'}</td>
+      <td class="td-mono">${(p.rpd_limit || 0) - (p.rpd_used || 0)}</td>
+      <td class="td-mono">${(p.rpm_limit || 0) - (p.rpm_used || 0)}</td>
+      <td class="td-mono">${Math.round(p.avg_latency || 0)}ms</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderCb(states) {
+  const tbody = document.getElementById('cb-tbody');
+  if (!states || states.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="td-m td-center" style="padding:2rem">暂无熔断状态，所有节点正常</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = states.map(s => {
+    let statusBadge = '<span class="badge b-warn">冷却中</span>';
+    if (s.locked) statusBadge = '<span class="badge b-err">已锁定</span>';
+    return `<tr>
+      <td><span class="badge b-neu">${s.type}</span></td>
+      <td class="td-mono">${s.target}</td>
+      <td>${statusBadge}</td>
+      <td class="td-mono">${s.remaining ? fmtDuration(s.remaining * 1000) : '-'}</td>
+      <td class="td-mono">${s.failures || 0}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="resetCb('${s.type}','${s.target}')">重置</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function resetCb(type, target) {
+  try {
+    await apiPost('/api/cb/reset', { type, target });
+    toast('熔断已重置');
+    await refresh();
+  } catch (e) {
+    toast('重置失败: ' + e.message, 'err');
+  }
+}
+
+async function resetAllCb() {
+  if (!confirm('确定重置所有熔断状态？')) return;
+  try {
+    await apiPost('/api/cb/reset', { all: true });
+    toast('所有熔断已重置');
+    await refresh();
+  } catch (e) {
+    toast('重置失败: ' + e.message, 'err');
+  }
+}
+
+async function loadLogs() {
+  const tbody = document.getElementById('logs-tbody');
+  try {
+    const data = await apiGet('/api/logs?limit=50');
+    if (!data.ok || !data.logs || data.logs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="td-m td-center" style="padding:2rem">暂无日志</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.logs.map(l => {
+      let statusBadge = '<span class="badge b-ok">200</span>';
+      if (l.status >= 400) statusBadge = '<span class="badge b-err">' + l.status + '</span>';
+      else if (l.status >= 300) statusBadge = '<span class="badge b-warn">' + l.status + '</span>';
+      return `<tr>
+        <td class="td-mono td-m">${fmtTime(l.ts)}</td>
+        <td class="td-mono">${l.model || '-'}</td>
+        <td>${statusBadge}</td>
+        <td class="td-mono">${l.provider || '-'}</td>
+        <td class="td-mono">${fmtDuration(l.latency || 0)}</td>
+        <td class="td-mono">${l.tokens || '-'}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = '<tr><td colspan="6" class="td-m td-center" style="padding:2rem;color:var(--err)">加载失败</td></tr>';
+  }
+}
+
+async function refresh() {
+  await Promise.all([refreshTrend(), loadStats()]);
+}
+
+async function init() {
+  const cfg = await apiGet('/api/config');
+  if (cfg.ok) {
+    document.getElementById('srv-port').value = cfg.config.port || 20128;
+    document.getElementById('api-base').value = `http://localhost:${cfg.config.port || 20128}/v1`;
+  }
+  
+  _trendData = [];
+  for (let i = 0; i < 30; i++) {
+    _trendData.push({ ts: Date.now() - (30-i)*2000, total: 0 });
+  }
+  
+  await refresh();
+  _refreshInterval = setInterval(refresh, 2000);
+  
+  window.addEventListener('resize', drawTrend);
+}
+
+init();
+</script>
+</body>
+</html>

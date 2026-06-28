@@ -1,0 +1,13 @@
+node_modules/
+data/*.db
+data/*.db-journal
+config.yml
+config.yml.bak
+*.log
+.DS_Store
+.env
+.vscode/
+.idea/
+*.tar.gz
+nanoroute-backup-*/
+test-save.js

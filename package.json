@@ -1,0 +1,34 @@
+{
+  "name": "nanoroute",
+  "version": "0.1.0",
+  "description": "Lightweight AI Gateway with memory ≤150MB - Round-robin, fallback, and multi-provider routing",
+  "type": "module",
+  "main": "server.js",
+  "bin": {
+    "nanoroute": "./bin/nanoroute.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "ai-gateway",
+    "openai",
+    "gemini",
+    "claude",
+    "llm",
+    "router",
+    "lightweight"
+  ],
+  "author": "NanoRoute Team",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "js-yaml": "^4.1.0",
+    "undici": "^6.21.2"
+  }
+}

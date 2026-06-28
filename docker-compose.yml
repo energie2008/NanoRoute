@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  nanoroute:
+    build: .
+    image: nanoroute:latest
+    container_name: nanoroute
+    restart: unless-stopped
+    ports:
+      - "30128:30128"
+    volumes:
+      - ./config.yml:/app/config.yml:ro
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:20128/healthz').catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    mem_limit: 256m
+    memswap_limit: 256m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
