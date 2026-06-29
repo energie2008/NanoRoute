@@ -29,6 +29,7 @@
   "dependencies": {
     "better-sqlite3": "^12.6.2",
     "js-yaml": "^4.1.0",
+    "socks-proxy-agent": "^10.1.0",
     "undici": "^6.21.2"
   }
 }

@@ -1,9 +1,20 @@
 import { ProxyAgent, Agent } from 'undici';
+import { SocksProxyAgent } from 'socks-proxy-agent';
 
 let proxyPool = [];
 let currentIndex = 0;
 let globalDispatcher = null;
 let healthCheckInterval = null;
+
+function createProxyAgent(url) {
+  const lowerUrl = url.toLowerCase();
+  if (lowerUrl.startsWith('socks://') || lowerUrl.startsWith('socks4://') || 
+      lowerUrl.startsWith('socks4a://') || lowerUrl.startsWith('socks5://') || 
+      lowerUrl.startsWith('socks5h://')) {
+    return new SocksProxyAgent(url);
+  }
+  return new ProxyAgent(url);
+}
 
 class ProxyEntry {
   constructor(url, weight = 1, type = 'http') {
@@ -14,7 +25,7 @@ class ProxyEntry {
     this.lastCheck = 0;
     this.failCount = 0;
     this.cooldownUntil = 0;
-    this.agent = new ProxyAgent(url);
+    this.agent = createProxyAgent(url);
   }
 
   isAvailable() {

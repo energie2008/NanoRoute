@@ -266,8 +266,8 @@ pre{background:var(--off);border:1px solid var(--bdr);border-radius:var(--r-md);
         </select>
       </div>
       <div class="field full">
-        <div class="label">全局 HTTP 代理</div>
-        <input type="text" class="input input-mono" id="adv-proxy" placeholder="http://127.0.0.1:10808 (留空则不使用代理)">
+        <div class="label">全局代理（HTTP/SOCKS5）</div>
+        <input type="text" class="input input-mono" id="adv-proxy" placeholder="支持http://或socks5://，带密码: socks5://user:pass@host:port">
         <div class="help">分组可设置独立代理覆盖此配置</div>
       </div>
     </div>
@@ -375,8 +375,8 @@ pre{background:var(--off);border:1px solid var(--bdr);border-radius:var(--r-md);
         </div>
         <div class="field">
           <div class="label">代理设置</div>
-          <input type="text" class="input input-mono" id="g-proxy" placeholder="http://... 或 null=直连 或留空=全局">
-          <div class="help">填 null 强制直连，留空使用全局代理</div>
+          <input type="text" class="input input-mono" id="g-proxy" placeholder="支持http:///socks5://，null=直连，留空=全局">
+          <div class="help">填 null 强制直连，留空使用全局代理，支持带密码认证</div>
         </div>
       </div>
       <div class="field" style="margin-top:.75rem">
