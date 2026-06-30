@@ -1,17 +1,63 @@
 import { ProxyAgent, Agent } from 'undici';
-import { SocksProxyAgent } from 'socks-proxy-agent';
+import { SocksClient } from 'socks';
+import { URL } from 'url';
 
 let proxyPool = [];
 let currentIndex = 0;
 let globalDispatcher = null;
 let healthCheckInterval = null;
 
+function parseProxyUrl(url) {
+  const parsed = new URL(url);
+  const type = parsed.protocol.replace(':', '').toLowerCase();
+  let socksType = 5;
+  if (type === 'socks' || type === 'socks5' || type === 'socks5h') socksType = 5;
+  if (type === 'socks4' || type === 'socks4a') socksType = 4;
+  
+  return {
+    type,
+    host: parsed.hostname,
+    port: parseInt(parsed.port, 10),
+    userId: decodeURIComponent(parsed.username || ''),
+    password: decodeURIComponent(parsed.password || ''),
+    socksType
+  };
+}
+
 function createProxyAgent(url) {
   const lowerUrl = url.toLowerCase();
   if (lowerUrl.startsWith('socks://') || lowerUrl.startsWith('socks4://') || 
       lowerUrl.startsWith('socks4a://') || lowerUrl.startsWith('socks5://') || 
       lowerUrl.startsWith('socks5h://')) {
-    return new SocksProxyAgent(url);
+    const proxy = parseProxyUrl(url);
+    return new Agent({
+      allowH2: false,
+      connect: async (options) => {
+        let port = parseInt(options.port, 10);
+        if (!port) {
+          port = options.protocol === 'https:' ? 443 : 80;
+        }
+        
+        const { socket } = await SocksClient.createConnection({
+          proxy: {
+            host: proxy.host,
+            port: proxy.port,
+            type: proxy.socksType,
+            userId: proxy.userId || undefined,
+            password: proxy.password || undefined
+          },
+          command: 'connect',
+          destination: {
+            host: options.hostname,
+            port: port
+          },
+          set_tcp_nodelay: true
+        });
+        
+        socket.setKeepAlive(true, 60000);
+        return socket;
+      }
+    });
   }
   return new ProxyAgent(url);
 }

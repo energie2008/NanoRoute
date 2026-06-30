@@ -2,7 +2,7 @@ import { ConfigAPI } from './config.js';
 import { SyncAPI } from './sync.js';
 import { getDB, getModelBreakdown, getRecentErrorsList, getRtkStats } from '../state/db.js';
 import { parseBody, sendJSON, sendError } from '../utils/http.js';
-import { getPoolStatus } from '../proxy/pool.js';
+import { getPoolStatus, getDispatcher } from '../proxy/pool.js';
 import { Router } from '../router/index.js';
 
 const _sendJSON = (res, data, status = 200) => {
@@ -337,14 +337,14 @@ export class AdminAPI {
 
     if (method === 'POST' && path === '/api/probe') {
       try {
-        const { type, api_key, model, base_url } = body || {};
+        const { type, api_key, model, base_url, proxy } = body || {};
         if (!type || !api_key || !model) {
           _sendJSON(res, { ok: false, error: '缺少必填参数: type, api_key, model' });
           return;
         }
 
         const start = Date.now();
-        const result = await probeProvider({ type, api_key, model, base_url });
+        const result = await probeProvider({ type, api_key, model, base_url, proxy });
         _sendJSON(res, {
           ok: true,
           latency_ms: Date.now() - start,
@@ -362,11 +362,70 @@ export class AdminAPI {
       return;
     }
 
+    if (method === 'POST' && path === '/api/models/fetch') {
+      try {
+        const { type, api_key, base_url, proxy } = body || {};
+        if (!type || !api_key) {
+          _sendJSON(res, { ok: false, error: '缺少必填参数: type, api_key' });
+          return;
+        }
+        const models = await fetchProviderModels({ type, api_key, base_url, proxy });
+        _sendJSON(res, { ok: true, models });
+      } catch (err) {
+        _sendJSON(res, { ok: false, error: err.message, status: err.status || 0 });
+      }
+      return;
+    }
+
     _sendError(res, 404, 'API route not found');
   }
 }
 
-async function probeProvider({ type, api_key, model, base_url }) {
+async function fetchWithDispatcher(url, options = {}) {
+  const dispatcher = getDispatcher();
+  return fetch(url, { ...options, dispatcher });
+}
+
+async function fetchProviderModels({ type, api_key, base_url, proxy }) {
+  const t = (type || '').toLowerCase();
+  const isGemini = t.includes('gemini');
+  const isAnthropic = t.includes('anthropic') || t.includes('claude');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    if (isGemini) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(api_key)}`;
+      const response = await fetchWithDispatcher(url, { signal: controller.signal });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error?.message || `HTTP ${response.status}`);
+      return (data.models || []).map(m => ({
+        id: m.name?.replace('models/', '') || m.name,
+        name: m.displayName || m.name?.replace('models/', ''),
+        supportedMethods: m.supportedGenerationMethods || []
+      })).filter(m => m.supportedMethods.some(s => s.includes('generateContent')));
+    } else if (isAnthropic) {
+      return [{ id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet' }, { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku' }, { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus' }, { id: 'claude-3-haiku-20240307', name: 'Claude 3 Haiku' }];
+    } else {
+      const base = base_url || 'https://api.openai.com/v1';
+      const url = `${base.replace(/\/+$/, '')}/models`;
+      const response = await fetchWithDispatcher(url, {
+        headers: { 'Authorization': `Bearer ${api_key}` },
+        signal: controller.signal
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error?.message || `HTTP ${response.status}`);
+      return (data.data || []).map(m => ({ id: m.id, name: m.id, owned_by: m.owned_by }));
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('连接超时 (10s)');
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function probeProvider({ type, api_key, model, base_url, proxy }) {
   let url, headers = { 'Content-Type': 'application/json' }, body;
   const t = (type || '').toLowerCase();
   const isGemini = t.includes('gemini');
@@ -402,7 +461,7 @@ async function probeProvider({ type, api_key, model, base_url }) {
   const timeout = setTimeout(() => controller.abort(), 8000);
 
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithDispatcher(url, {
       method: 'POST',
       headers,
       body,

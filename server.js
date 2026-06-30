@@ -63,10 +63,9 @@ try {
   if (process.env.PORT) {
     config.port = parseInt(process.env.PORT, 10);
   }
+  const _adminPassword = config.admin_password || process.env.ADMIN_PASSWORD || '123456';
   console.log(`[NanoRoute] Config loaded: ${config.providers.length} providers`);
-  if (config.admin_password) {
-    console.log('[NanoRoute] Admin password protection enabled');
-  }
+  console.log(`[NanoRoute] Admin password protection enabled (source: ${config.admin_password ? 'config.yml' : (process.env.ADMIN_PASSWORD ? 'env' : 'default')})`);
 
   const hasProxiesArray = Array.isArray(config.proxies) && config.proxies.length > 0;
   const proxyConfig = hasProxiesArray ? config.proxies : config.proxy;
@@ -98,15 +97,15 @@ const server = createServer(async (req, res) => {
       }
     }
 
+    // Unified admin password: explicit config > env > default 123456.
+    // 登录校验与页面保护使用同一来源，避免「无密码直接放行」与「兜底123456」逻辑不一致。
+    const adminPassword = config.admin_password || process.env.ADMIN_PASSWORD || '123456';
+
     // Login API
     if (req.method === 'POST' && path === '/api/login') {
-      if (!config.admin_password) {
-        sendJSON(res, { ok: true });
-        return;
-      }
       const body = await parseBody(req);
       const password = body.password || '';
-      if (password === config.admin_password) {
+      if (password === adminPassword) {
         const sid = generateSessionId();
         SESSIONS.set(sid, { created: Date.now() });
         setSessionCookie(res, sid);
@@ -118,7 +117,6 @@ const server = createServer(async (req, res) => {
     }
 
     // Admin authentication for dashboard and API
-    const adminPassword = config.admin_password || process.env.ADMIN_PASSWORD || '123456';
     const isAdminPath = path === '/' || path === '/index.html' || path === '/config' || path === '/config.html' || (path.startsWith('/api/') && path !== '/api/login');
     if (adminPassword && isAdminPath) {
       const session = getSession(req);
