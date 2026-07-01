@@ -10,6 +10,9 @@ const VALID_STRATEGIES = ['priority', 'round-robin', 'weighted', 'least-used', '
 const defaultConfig = {
   port: 20128,
   log_level: 'info',
+  admin_password: '123456',
+  // 客户端访问 /v1/* 接口所需的 API Key 列表（空数组 = 不鉴权）
+  api_keys: [],
   proxy: null,
   proxies: [],
   proxy_strategy: 'round-robin',
@@ -144,6 +147,10 @@ function validateConfig(config) {
         const val = Number(g.max_concurrency);
         if (val < 1) errors.push(`${gpfx}.max_concurrency 必须 >= 1`);
       }
+      if (g.token_limit !== undefined && g.token_limit !== null && g.token_limit !== '') {
+        const val = Number(g.token_limit);
+        if (!Number.isFinite(val) || val < 0) errors.push(`${gpfx}.token_limit 必须 >= 0`);
+      }
       
       const groupKeys = g.keys || [];
       if (!Array.isArray(groupKeys) || groupKeys.length === 0) {
@@ -276,7 +283,11 @@ function expandGroups(cfg) {
     const groupRpd = (rpdVal && rpdVal >= 1) ? rpdVal : getDefaultRPD(group.model, vendorType);
     const groupRpm = (rpmVal && rpmVal >= 1) ? rpmVal : getDefaultRPM(group.model, vendorType);
     const groupMaxConcurrency = group.max_concurrency ? Number(group.max_concurrency) : null;
-    
+    const groupTokenLimit = (g => {
+      const v = Number(g);
+      return (g !== null && g !== undefined && g !== '' && Number.isFinite(v) && v > 0) ? v : null;
+    })(group.token_limit);
+
     const groupProviders = [];
     const keys = group.keys || [];
     keys.forEach((key, ki) => {
@@ -294,6 +305,7 @@ function expandGroups(cfg) {
         rpm_limit: groupRpm,
         proxy: groupProxy,
         max_concurrency: groupMaxConcurrency,
+        token_limit: groupTokenLimit,
         enabled: key.enabled !== false,
         capabilities: group.capabilities || [],
         _group_id: group.id
@@ -301,12 +313,14 @@ function expandGroups(cfg) {
       flatProviders.push(p);
       groupProviders.push(p);
     });
-    
+
     groupMap.set(group.id, {
       id: group.id,
       type: vendorType,
       model: group.model,
       priority: Number(group.priority) || 2,
+      token_limit: groupTokenLimit,
+      label: group.label || '',
       providers: groupProviders
     });
   }
@@ -455,6 +469,20 @@ export function configToYaml(cfg) {
   line(`log_level: ${cfg.log_level || 'info'}`);
   line('');
 
+  // 管理后台密码
+  if (cfg.admin_password) {
+    line(`admin_password: "${cfg.admin_password}"`);
+    line('');
+  }
+
+  // 客户端 API Key（访问 /v1/* 接口鉴权，空列表 = 不鉴权）
+  const apiKeys = Array.isArray(cfg.api_keys) ? cfg.api_keys : [];
+  if (apiKeys.length > 0) {
+    line('api_keys:');
+    apiKeys.forEach(k => line(`  - "${k}"`));
+    line('');
+  }
+
   if (cfg.proxy) {
     line('# HTTP代理配置（通过v2ray/clash等访问外网）');
     line(`proxy: "${cfg.proxy}"`);
@@ -531,11 +559,13 @@ export function configToYaml(cfg) {
       line(`  - id: ${g.id}`);
       line(`    type: ${g.type}`);
       line(`    model: ${g.model}`);
+      if (g.label) line(`    label: "${g.label}"`);
       line(`    priority: ${g.priority || 2}`);
       if (g.weight && g.weight !== 1) line(`    weight: ${g.weight}`);
       if (g.rpd_limit) line(`    rpd_limit: ${g.rpd_limit}`);
       if (g.rpm_limit) line(`    rpm_limit: ${g.rpm_limit}`);
       if (g.max_concurrency) line(`    max_concurrency: ${g.max_concurrency}`);
+      if (g.token_limit) line(`    token_limit: ${g.token_limit}`);
       if (g.base_url) line(`    base_url: "${g.base_url}"`);
       if (g.proxy === null) {
         line('    proxy: null  # 直连，不使用代理');

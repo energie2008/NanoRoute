@@ -1,4 +1,4 @@
-﻿import Database from 'better-sqlite3';
+import Database from 'better-sqlite3';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, existsSync } from 'node:fs';
@@ -295,6 +295,11 @@ export function initDB() {
         SUM(CASE WHEN rtk_saved_bytes > 0 THEN 1 ELSE 0 END) AS compressed_requests
       FROM usage_log WHERE timestamp >= ?
     `),
+    getGroupTokenUsage: db.prepare(`
+      SELECT COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS used
+      FROM usage_log
+      WHERE provider_id LIKE ? ESCAPE '\\'
+    `),
   };
 
   dbInstance = db;
@@ -388,6 +393,15 @@ class NanoDB {
     const now = new Date();
     const utcTomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
     return utcTomorrow.getTime();
+  }
+
+  // 查询某 Provider 分组累计已用 token 总量（按 provider_id 前缀 `${groupId}__` 聚合）
+  getGroupTokenUsage(groupId) {
+    if (!groupId) return 0;
+    // 转义 LIKE 通配符，避免 groupId 含 % 或 _ 时误匹配
+    const escaped = String(groupId).replace(/[\\%_]/g, m => '\\' + m);
+    const row = this.stmt.getGroupTokenUsage.get(`${escaped}__%`);
+    return row ? (row.used || 0) : 0;
   }
 
   getNextRPMResetMs() {

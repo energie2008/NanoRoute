@@ -223,6 +223,7 @@ pre{background:var(--off);border:1px solid var(--bdr);border-radius:var(--r-md);
   </div>
   <div class="tab-bar">
     <button class="tab active" onclick="showTab('models',this)">模型配置</button>
+    <button class="tab" onclick="showTab('apikeys',this)">API 密钥</button>
     <button class="tab" onclick="showTab('routing',this)">路由策略</button>
     <button class="tab" onclick="showTab('advanced',this)">高级设置</button>
     <button class="tab" onclick="showTab('yaml',this)">YAML 预览</button>
@@ -245,9 +246,9 @@ pre{background:var(--off);border:1px solid var(--bdr);border-radius:var(--r-md);
 <div id="tab-models" class="section active">
   <div class="card">
     <div class="card-h">
-      Provider 分组管理
-      <span class="sub">按模型聚合多个 API Key，支持组级代理 / 限流 / 并发</span>
-      <button class="btn btn-pri btn-sm" onclick="addGroup()" style="margin-left:auto">+ 新建分组</button>
+      提供商管理
+      <span class="sub">一个提供商 = 一个模型 + 多个 API Key 池（同厂商同模型多 Key 轮询，行业标准做法）</span>
+      <button class="btn btn-pri btn-sm" onclick="addGroup()" style="margin-left:auto">+ 添加提供商</button>
     </div>
     <div class="card-b" style="padding:.5rem 1.25rem 1.25rem">
       <div id="group-list"></div>
@@ -280,6 +281,35 @@ pre{background:var(--off);border:1px solid var(--bdr);border-radius:var(--r-md);
       <span class="sub">检测本地已配置模型在能力簇中的覆盖</span>
     </div>
     <div class="card-body"><div id="capability-graph"></div></div>
+  </div>
+</div>
+
+<!-- ========== API 密钥（客户端鉴权） ========== -->
+<div id="tab-apikeys" class="section">
+  <div class="card">
+    <div class="card-h">
+      客户端 API 密钥
+      <span class="sub">调用 /v1/* 接口所需的鉴权密钥（空列表 = 不鉴权）</span>
+      <button class="btn btn-pri btn-sm" onclick="addApiKey()" style="margin-left:auto">+ 生成密钥</button>
+    </div>
+    <div class="card-b">
+      <div class="help" style="margin-bottom:.75rem">
+        客户端调用 <code style="font-family:var(--mono);color:var(--pri-h)">/v1/chat/completions</code> 等接口时，需在请求头携带
+        <code style="font-family:var(--mono);color:var(--pri-h)">Authorization: Bearer &lt;密钥&gt;</code> 或
+        <code style="font-family:var(--mono);color:var(--pri-h)">X-API-Key: &lt;密钥&gt;</code>。与上方「提供商 API Key」是不同概念。
+      </div>
+      <div id="apikeys-list"></div>
+      <div class="key-add" style="margin-top:.85rem">
+        <input type="text" id="new-apikey-input" class="input input-mono" placeholder="手动输入密钥，或点右侧自动生成" style="flex:1">
+        <button class="btn btn-ghost btn-sm" onclick="genApiKey()" title="随机生成 48 位十六进制密钥">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+          随机生成
+        </button>
+        <button class="btn btn-pri btn-icon btn-sm" onclick="addApiKeyManual()" title="添加">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -373,16 +403,22 @@ pre{background:var(--off);border:1px solid var(--bdr);border-radius:var(--r-md);
 
 </div>
 
-<!-- ========== 分组弹窗 ========== -->
+<!-- ========== 提供商弹窗 ========== -->
 <div id="group-modal" class="modal-bg">
   <div class="modal">
-    <div class="modal-h"><span id="group-modal-title">新建分组</span>
+    <div class="modal-h"><span id="group-modal-title">添加提供商</span>
       <button class="btn btn-ghost btn-icon btn-sm" onclick="closeGroupModal()">✕</button>
     </div>
     <div class="modal-b">
       <div class="grid">
-        <div class="field"><div class="label">分组 ID *</div><input type="text" class="input input-mono" id="g-id" placeholder="如 glm-flash"></div>
+        <div class="field"><div class="label">提供商 ID *</div><input type="text" class="input input-mono" id="g-id" placeholder="如 gemini-1 / openrouter-main" onchange="onIdInput()"><div class="help">用于 Combo 引用，建议用厂商名+序号，勿用模型名</div></div>
+        <div class="field"><div class="label">备注名</div><input type="text" class="input" id="g-label" placeholder="如 主力Gemini池 / 兜底"><div class="help">仅用于展示，便于区分</div></div>
+      </div>
+      <div class="grid" style="margin-top:.85rem">
         <div class="field"><div class="label">厂商类型 *</div><select class="select" id="g-type" onchange="onGroupTypeChange()"></select></div>
+        <div class="field"><div class="label">优先级</div>
+          <select class="select" id="g-prio"><option value="4">P4 - 最高</option><option value="3">P3 - 高</option><option value="2" selected>P2 - 中</option><option value="1">P1 - 低</option></select>
+        </div>
       </div>
       <div class="grid" style="margin-top:.85rem">
         <div class="field">
@@ -398,15 +434,15 @@ pre{background:var(--off);border:1px solid var(--bdr);border-radius:var(--r-md);
           </div>
           <div class="fetched-list" id="g-fetched"></div>
         </div>
-        <div class="field"><div class="label">优先级</div>
-          <select class="select" id="g-prio"><option value="4">P4 - 最高</option><option value="3">P3 - 高</option><option value="2" selected>P2 - 中</option><option value="1">P1 - 低</option></select>
-        </div>
       </div>
       <div class="field" id="g-baseurl-row" style="margin-top:.85rem;display:none"><div class="label">API Base URL</div><input type="text" class="input input-mono" id="g-baseurl" placeholder="https://api.example.com/v1"></div>
       <div class="grid" style="margin-top:.85rem">
         <div class="field"><div class="label">RPD 限制 (每个Key/天)</div><input type="number" class="input" id="g-rpd" placeholder="留空=默认"><div class="help">Gemini 免费版默认 20/天</div></div>
         <div class="field"><div class="label">RPM 限制 (每个Key/分)</div><input type="number" class="input" id="g-rpm" placeholder="留空=默认"><div class="help">Gemini 免费版默认 10/分</div></div>
+        <div class="field"><div class="label">Token 总额限制</div><input type="number" class="input" id="g-token-limit" placeholder="留空=不限"><div class="help">该提供商累计 token 上限，耗尽自动熔断</div></div>
         <div class="field"><div class="label">最大并发数</div><input type="number" class="input" id="g-concurrency" placeholder="留空=不限"></div>
+      </div>
+      <div class="grid" style="margin-top:.85rem">
         <div class="field"><div class="label">代理设置</div><input type="text" class="input input-mono" id="g-proxy" placeholder="http:// / socks5://  或 null"><div class="help">null=直连，留空=全局</div></div>
       </div>
       <div class="field" style="margin-top:.85rem"><div class="label">能力标签</div>
@@ -424,14 +460,21 @@ pre{background:var(--off);border:1px solid var(--bdr);border-radius:var(--r-md);
         API Keys <span id="g-keycount" class="badge b-neu" style="margin-left:auto">0 个</span>
       </div>
       <div id="g-keys-list"></div>
-      <button class="btn btn-ghost btn-sm" onclick="addModalKey()" style="margin-top:.4rem">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        添加一个 Key
-      </button>
+      <div class="key-add" style="margin-top:.5rem;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="addModalKey()">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          添加一个 Key
+        </button>
+        <button class="btn btn-ghost btn-sm" id="g-probe-btn" onclick="probeModalKey()" title="用第一个 Key + 当前模型测试连通性与延迟">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          测试连接
+        </button>
+        <span class="help" id="g-probe-hint" style="margin:0;align-self:center"></span>
+      </div>
     </div>
     <div class="modal-f">
       <button class="btn btn-ghost" onclick="closeGroupModal()">取消</button>
-      <button class="btn btn-pri" onclick="saveGroup()">保存分组</button>
+      <button class="btn btn-pri" onclick="saveGroup()">保存</button>
     </div>
   </div>
 </div>
@@ -606,13 +649,18 @@ function esc(s){ return String(s==null?'':s).replace(/"/g,'&quot;').replace(/</g
 function convertLegacyProvidersToGroups(providers){
   if(!providers || !providers.length) return [];
   const groupMap = new Map();
+  // 厂商短名计数器：生成 gemini-1 / openai-1 这类与模型名解耦的 ID
+  const vendorCounter = {};
   providers.forEach(p=>{
-    const modelKey = p.model.replace(/\./g,'-').replace(/_/g,'-');
-    const gid = `${p.type}-${modelKey}`;
+    const vendor = p.vendor_type || p.type || 'custom';
+    const short = VENDOR_SHORT[vendor] || VENDOR_SHORT[normalizeType(vendor)] || vendor.replace(/[^a-z0-9]+/gi,'-').toLowerCase() || 'provider';
+    if(!(short in vendorCounter)) vendorCounter[short] = 0;
+    // 已有显式 group 字段则沿用，否则按厂商+序号生成
+    let gid = p.group && p.group !== 'default' ? p.group : `${short}-${++vendorCounter[short]}`;
     if(!groupMap.has(gid)){
-      groupMap.set(gid,{id:gid,type:p.vendor_type||p.type,model:p.model,base_url:p.base_url,priority:p.priority||2,
+      groupMap.set(gid,{id:gid,type:vendor,model:p.model,base_url:p.base_url,priority:p.priority||2,
         rpd_limit:p.rpd_limit||null,rpm_limit:p.rpm_limit||null,proxy:p.proxy,max_concurrency:p.max_concurrency||null,
-        capabilities:p.capabilities||['chat'],keys:[]});
+        token_limit:p.token_limit||null,label:'',capabilities:p.capabilities||['chat'],keys:[]});
     }
     const g = groupMap.get(gid);
     const shortId = p.id.includes('__')?p.id.split('__').pop():`key${g.keys.length+1}`;
@@ -620,6 +668,31 @@ function convertLegacyProvidersToGroups(providers){
   });
   return Array.from(groupMap.values());
 }
+
+// 厂商 → 短名映射（用于自动生成提供商 ID）
+const VENDOR_SHORT = {
+  'google-gemini':'gemini','gemini':'gemini',
+  'anthropic':'claude','claude':'claude',
+  'openai':'openai',
+  'zhipu':'glm','qwen':'qwen','deepseek':'deepseek','ernie':'ernie','doubao':'doubao',
+  'moonshot':'kimi','xai-grok':'grok','mistral':'mistral','xinghuo':'spark','cohere':'cohere',
+  'meta-llama':'llama','hunyuan':'hunyuan','lingyi':'yi','minimaxi':'minimax','baichuan':'baichuan',
+  'siliconflow':'siliconflow','tiangong':'tiangong','openrouter':'openrouter','together':'together',
+  'groq':'groq','wavespeed':'wavespeed','nvidia':'nvidia','mimo':'mimo','volc-agentplan':'agentplan',
+  'shengsuan':'shengsuan','subrouter':'subrouter','openai-compatible':'custom'
+};
+function vendorShort(type){ return VENDOR_SHORT[type] || VENDOR_SHORT[normalizeType(type)] || (type||'provider').replace(/[^a-z0-9]+/gi,'-').toLowerCase(); }
+function suggestProviderId(type){
+  const short = vendorShort(type);
+  const existing = new Set(((_config.provider_groups)||[]).map(g=>g.id));
+  let n = 1;
+  while(existing.has(`${short}-${n}`)) n++;
+  return `${short}-${n}`;
+}
+
+// 标记用户是否手动编辑过 ID，避免覆盖
+let _idManuallyEdited = false;
+function onIdInput(){ _idManuallyEdited = $('g-id').value.trim().length > 0; }
 
 /* ============================================================ selects */
 function populateGroupTypeSelect(selId, selected){
@@ -662,6 +735,10 @@ function onGroupTypeChange(){
   $('g-caps').querySelectorAll('.chip').forEach(c=>{
     c.classList.toggle('sel', getCapsForType(type).includes(c.dataset.cap));
   });
+  // 新建模式下，按厂商自动建议 ID（用户未手动编辑时）
+  if(_editingGroupIdx < 0 && !_idManuallyEdited){
+    $('g-id').value = suggestProviderId(type);
+  }
   populateGroupModelSelect(type, getMergedModels(type)[0]?.value);
   onModelChange();
 }
@@ -717,6 +794,32 @@ function pickFetched(id){
   });
 }
 
+/* ============================================================ 弹窗内测速（用第一个 Key + 当前模型探测连通性） */
+async function probeModalKey(){
+  const type = $('g-type').value;
+  const model = getGroupModelValue();
+  const apiKey = (_modalKeys[0] && _modalKeys[0].api_key) || '';
+  const baseUrl = $('g-baseurl').value.trim();
+  const hint = $('g-probe-hint');
+  if(!apiKey){ hint.textContent = '❌ 请先添加至少一个 API Key'; hint.style.color='var(--err)'; return; }
+  if(!model){ hint.textContent = '❌ 请先选择模型'; hint.style.color='var(--err)'; return; }
+  const btn = $('g-probe-btn');
+  btn.disabled = true; const orig = btn.innerHTML; btn.innerHTML = '<span class="spinner-mini"></span> 测试中';
+  hint.style.color = 'var(--txm)'; hint.textContent = '正在连接...';
+  const start = Date.now();
+  try{
+    const r = await fetch('/api/probe', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ type, api_key:apiKey, model, base_url: baseUrl || undefined })
+    });
+    const data = await r.json();
+    const ms = Date.now() - start;
+    if(data.ok){ hint.style.color='var(--ok)'; hint.textContent = `✅ ${ms}ms`; toast(`连通正常：${ms}ms`); }
+    else { hint.style.color='var(--err)'; hint.textContent = `❌ ${data.error||'失败'}`; toast('测速失败: '+(data.error||''),'err'); }
+  }catch(e){ hint.style.color='var(--err)'; hint.textContent = '❌ '+e.message; toast('测速失败: '+e.message,'err'); }
+  finally{ btn.disabled=false; btn.innerHTML=orig; }
+}
+
 /* ============================================================ 弹窗内 Keys（问题2：建组即加Key） */
 function addModalKey(apiKey=''){
   _modalKeys.push({id:`key${_modalKeys.length+1}`, api_key:apiKey, enabled:true});
@@ -745,16 +848,19 @@ function renderModalKeys(){
 /* ============================================================ Group 增删改 */
 function addGroup(){
   _editingGroupIdx = -1;
+  _idManuallyEdited = false;
   _modalKeys = [];
   _fetchedModels = {};
-  $('group-modal-title').textContent = '新建分组';
+  $('group-modal-title').textContent = '添加提供商';
   $('g-id').value = '';
+  $('g-label').value = '';
   $('g-fetch-hint').textContent = '填好 Key 后点此';
+  $('g-probe-hint').textContent = '';
   $('g-fetched').innerHTML = '';
   populateGroupTypeSelect('g-type','google-gemini');
   onGroupTypeChange();
   $('g-prio').value = '2';
-  $('g-rpd').value = ''; $('g-rpm').value = ''; $('g-concurrency').value = ''; $('g-proxy').value = '';
+  $('g-rpd').value = ''; $('g-rpm').value = ''; $('g-token-limit').value=''; $('g-concurrency').value = ''; $('g-proxy').value = '';
   renderModalKeys();
   $('group-modal').classList.add('show');
 }
@@ -762,11 +868,14 @@ function editGroup(i, ev){
   ev && ev.stopPropagation();
   const g = _config.provider_groups[i];
   _editingGroupIdx = i;
+  _idManuallyEdited = true; // 编辑时保留原 ID
   _modalKeys = (g.keys||[]).map(k=>({...k}));
   _fetchedModels = {};
-  $('group-modal-title').textContent = '编辑分组';
+  $('group-modal-title').textContent = '编辑提供商';
   $('g-id').value = g.id;
+  $('g-label').value = g.label || '';
   $('g-fetch-hint').textContent = '填好 Key 后点此';
+  $('g-probe-hint').textContent = '';
   $('g-fetched').innerHTML = '';
   populateGroupTypeSelect('g-type', g.type);
   populateGroupModelSelect(g.type, g.model);
@@ -776,6 +885,7 @@ function editGroup(i, ev){
   $('g-prio').value = String(g.priority||2);
   $('g-rpd').value = g.rpd_limit||'';
   $('g-rpm').value = g.rpm_limit||'';
+  $('g-token-limit').value = g.token_limit||'';
   $('g-concurrency').value = g.max_concurrency||'';
   $('g-proxy').value = g.proxy===null?'null':(g.proxy||'');
   const caps = g.capabilities||['chat'];
@@ -789,15 +899,17 @@ function saveGroup(){
   const id = $('g-id').value.trim();
   const type = $('g-type').value;
   const model = getGroupModelValue();
+  const label = $('g-label').value.trim();
   const prio = parseInt($('g-prio').value);
   let rpd = $('g-rpd').value.trim();
   let rpm = $('g-rpm').value.trim();
+  let tokenLimit = $('g-token-limit').value.trim();
   const concurrency = $('g-concurrency').value.trim();
   let proxy = $('g-proxy').value.trim();
   let baseUrl = $('g-baseurl').value.trim();
   const caps = Array.from($('g-caps').querySelectorAll('.chip.sel')).map(c=>c.dataset.cap);
 
-  if(!id){ toast('请填写分组 ID','err'); return; }
+  if(!id){ toast('请填写提供商 ID','err'); return; }
   if(!model){ toast('请选择或输入模型','err'); return; }
 
   // 收集弹窗内 keys
@@ -805,11 +917,13 @@ function saveGroup(){
 
   rpd = rpd?parseInt(rpd):null;
   rpm = rpm?parseInt(rpm):null;
+  tokenLimit = tokenLimit?parseInt(tokenLimit):null;
   const maxConcurrency = concurrency?parseInt(concurrency):null;
   if(proxy==='null') proxy=null; else if(!proxy) proxy=undefined;
   if(!isGeminiType(type) && !baseUrl) baseUrl = getBaseUrlForType(type);
 
-  const group = { id, type, model, priority:prio, rpd_limit:rpd, rpm_limit:rpm, proxy, max_concurrency:maxConcurrency, capabilities:caps, keys };
+  const group = { id, type, model, priority:prio, rpd_limit:rpd, rpm_limit:rpm, proxy, max_concurrency:maxConcurrency, token_limit:tokenLimit, capabilities:caps, keys };
+  if(label) group.label = label;
   if(baseUrl) group.base_url = baseUrl;
 
   if(_editingGroupIdx>=0){
@@ -817,12 +931,12 @@ function saveGroup(){
     const oldKeys = _config.provider_groups[_editingGroupIdx].keys||[];
     group.keys = keys.length>0 ? keys : oldKeys;
     _config.provider_groups[_editingGroupIdx] = group;
-    toast('分组已更新');
+    toast('提供商已更新');
   } else {
-    if((_config.provider_groups||[]).find(g=>g.id===id)){ toast('分组 ID 已存在','err'); return; }
+    if((_config.provider_groups||[]).find(g=>g.id===id)){ toast('提供商 ID 已存在','err'); return; }
     if(!_config.provider_groups) _config.provider_groups = [];
     _config.provider_groups.push(group);
-    toast('分组已创建');
+    toast('提供商已创建');
   }
   renderGroups();
   closeGroupModal();
@@ -830,10 +944,10 @@ function saveGroup(){
 
 function deleteGroup(i, ev){
   ev && ev.stopPropagation();
-  if(!confirm('确定删除此分组及其所有 Keys？')) return;
+  if(!confirm('确定删除此提供商及其所有 Keys？')) return;
   _config.provider_groups.splice(i,1);
   renderGroups();
-  toast('分组已删除');
+  toast('提供商已删除');
 }
 function toggleGroupBody(i, ev){
   ev && ev.stopPropagation();
@@ -883,13 +997,23 @@ function renderGroups(){
   const list = $('group-list');
   const groups = _config.provider_groups||[];
   if(groups.length===0){
-    list.innerHTML = `<div class="empty"><p style="font-size:var(--base);margin-bottom:.4rem">暂无 Provider 分组</p>
-      <p style="margin-bottom:1rem">点击「新建分组」开始配置你的第一个模型通道</p>
-      <button class="btn btn-pri btn-sm" onclick="addGroup()">+ 新建第一个分组</button></div>`;
+    list.innerHTML = `<div class="empty"><p style="font-size:var(--base);margin-bottom:.4rem">暂无提供商</p>
+      <p style="margin-bottom:1rem">点击「添加提供商」开始配置你的第一个模型通道</p>
+      <button class="btn btn-pri btn-sm" onclick="addGroup()">+ 添加第一个提供商</button></div>`;
     renderCapabilityGraph([]);
     return;
   }
-  list.innerHTML = groups.map((g,i)=>{
+  // 按厂商分组展示（同厂商的提供商聚合在一起，符合「提供商」心智模型）
+  const byVendor = new Map();
+  groups.forEach((g,i)=>{ const v=g.type||'other'; if(!byVendor.has(v)) byVendor.set(v,[]); byVendor.get(v).push({g,i}); });
+  const vendorOrder = ['google-gemini','anthropic','openai','zhipu','qwen','deepseek','moonshot'];
+  Array.from(byVendor.keys()).forEach(v=>{ if(!vendorOrder.includes(v)) vendorOrder.push(v); });
+
+  list.innerHTML = vendorOrder.map(v=>{
+    const items = byVendor.get(v); if(!items||!items.length) return '';
+    const vLabel = TYPE_OPTIONS.find(t=>t.value===v)?.label || v;
+    const vendorHeader = `<div style="display:flex;align-items:center;gap:.5rem;margin:.85rem 0 .4rem;font-size:var(--xs);font-weight:600;color:var(--txm);text-transform:uppercase;letter-spacing:.04em"><span style="flex:1;height:1px;background:var(--div)"></span><span>${esc(vLabel)} · ${items.length}</span><span style="flex:1;height:1px;background:var(--div)"></span></div>`;
+    const cards = items.map(({g,i})=>{
     const keys = g.keys||[];
     const enabledKeys = keys.filter(k=>k.enabled!==false);
     const rpdText = g.rpd_limit?`${g.rpd_limit}/天`:(isGeminiType(g.type)?'默认':'不限');
@@ -901,6 +1025,10 @@ function renderGroups(){
       const icons={chat:'💬',vision:'👁️',pdf:'📄',search:'🔍'};
       return `<span class="badge b-neu">${icons[c]||'•'} ${c}</span>`;
     }).join('');
+    const tokenBadge = g.token_limit
+      ? `<span class="badge ${g.token_used && g.token_used>=g.token_limit?'b-err':'b-pur'}" title="累计 token 用量">Token ${(g.token_used||0).toLocaleString()}/${g.token_limit.toLocaleString()}</span>`
+      : '';
+    const displayName = g.label ? `${esc(g.label)} <span style="color:var(--txf);font-weight:400;font-size:var(--xs)">(${esc(g.id)})</span>` : `<span>${esc(g.id)}</span>`;
     const keysHtml = keys.length===0
       ? '<div class="help" style="padding:.5rem 0">暂无 Key，请在下方添加</div>'
       : keys.map((k,ki)=>`
@@ -928,7 +1056,7 @@ function renderGroups(){
             <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
             <div style="min-width:0">
               <div class="group-title">
-                <span>${esc(g.id)}</span>
+                ${displayName}
                 <span class="badge b-info">P${g.priority||2}</span>
                 <span class="badge b-neu">${esc(typeLabel)}</span>
                 <span class="group-model">${esc(g.model)}</span>
@@ -937,6 +1065,7 @@ function renderGroups(){
               <div class="group-meta">
                 <span class="badge b-neu">RPD ${rpdText}</span>
                 <span class="badge b-neu">RPM ${rpmText}</span>
+                ${tokenBadge}
                 <span class="badge b-neu">${proxyText}</span>
                 <span class="badge b-neu">${concurrencyText}</span>
               </div>
@@ -966,6 +1095,8 @@ function renderGroups(){
           </div>
         </div>
       </div>`;
+    }).join('');
+    return vendorHeader + cards;
   }).join('');
   renderCapabilityGraph(groups.map(g=>g.model));
 }
@@ -1165,7 +1296,8 @@ function buildConfig(){
     providers:[],
     provider_groups: _config.provider_groups||[],
     combos,
-    aliases: collectAliases()
+    aliases: collectAliases(),
+    api_keys: _config.api_keys || []
   };
 }
 function yamlVal(v){
@@ -1178,6 +1310,12 @@ function yamlVal(v){
 function generateYAML(cfg){
   const L=[]; const line=s=>L.push(s);
   line(`port: ${cfg.port}`); line(`log_level: ${cfg.log_level}`); line('');
+  if(cfg.api_keys && cfg.api_keys.length){
+    line('# 客户端 API 密钥（访问 /v1/* 接口鉴权）');
+    line('api_keys:');
+    cfg.api_keys.forEach(k=>line(`  - "${k}"`));
+    line('');
+  }
   if(cfg.proxy){ line(`proxy: "${cfg.proxy}"`); line(''); }
   line('routing:');
   const r=cfg.routing;
@@ -1200,10 +1338,13 @@ function generateYAML(cfg){
   }
   line('provider_groups:');
   (cfg.provider_groups||[]).forEach(g=>{
-    line(`  - id: ${g.id}`); line(`    type: ${g.type}`); line(`    model: ${g.model}`); line(`    priority: ${g.priority}`);
+    line(`  - id: ${g.id}`); line(`    type: ${g.type}`); line(`    model: ${g.model}`);
+    if(g.label) line(`    label: "${g.label}"`);
+    line(`    priority: ${g.priority}`);
     if(g.base_url) line(`    base_url: "${g.base_url}"`);
     if(g.rpd_limit) line(`    rpd_limit: ${g.rpd_limit}`);
     if(g.rpm_limit) line(`    rpm_limit: ${g.rpm_limit}`);
+    if(g.token_limit) line(`    token_limit: ${g.token_limit}`);
     if(g.max_concurrency) line(`    max_concurrency: ${g.max_concurrency}`);
     if(g.proxy===null) line(`    proxy: null`); else if(g.proxy) line(`    proxy: "${g.proxy}"`);
     if(g.capabilities&&g.capabilities.length) line(`    capabilities: [${g.capabilities.join(', ')}]`);
@@ -1291,7 +1432,86 @@ async function loadConfig(){
     renderCombos();
     renderAliasEditor(_aliases);
     renderCapabilityGraph((_config.provider_groups||[]).map(p=>p.model));
+    renderApiKeys();
+    // 拉取 token 用量，回填到各组以展示「已用/上限」
+    enrichGroupTokenUsage();
   }catch(e){ toast('加载配置失败: '+e.message,'err'); }
+}
+
+async function enrichGroupTokenUsage(){
+  try{
+    const res = await fetch('/api/stats');
+    const data = await res.json();
+    if(!data || !data.ok) return;
+    const providers = data.providers || [];
+    // 按 group 前缀聚合 token 用量（provider_id 形如 `${groupId}__${keyId}`）
+    const groupToken = new Map();
+    providers.forEach(p=>{
+      if(!p.id || !p.id.includes('__')) return;
+      const gid = p.id.split('__')[0];
+      groupToken.set(gid, (groupToken.get(gid)||0) + (p.total_tokens||0));
+    });
+    (_config.provider_groups||[]).forEach(g=>{ g.token_used = groupToken.get(g.id) || 0; });
+    renderGroups();
+  }catch(e){ /* 静默失败，不影响展示 */ }
+}
+
+/* ============================================================ 客户端 API 密钥管理 */
+function renderApiKeys(){
+  const list = $('apikeys-list');
+  const keys = Array.isArray(_config.api_keys) ? _config.api_keys : [];
+  if(keys.length===0){
+    list.innerHTML = '<div class="help" style="padding:.6rem 0;text-align:center">暂无客户端密钥，调用 /v1/* 接口将不鉴权（建议至少添加一个）</div>';
+    return;
+  }
+  list.innerHTML = keys.map((k,i)=>`
+    <div class="key-row">
+      <span class="key-id" style="color:var(--pur)">#${i+1}</span>
+      <span class="key-val" title="${esc(k)}">${maskKey(k)}</span>
+      <div class="key-acts">
+        <button class="btn btn-ghost btn-icon btn-sm" onclick="copyApiKey(${i})" title="复制完整密钥">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button class="btn btn-ghost btn-icon btn-sm" onclick="deleteApiKey(${i})" style="color:var(--err)" title="删除">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+        </button>
+      </div>
+    </div>`).join('');
+}
+function genApiKey(){
+  // 浏览器端生成 48 位十六进制密钥（等价于 openssl rand -hex 24）
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  const key = 'sk-nanoroute-' + Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join('');
+  $('new-apikey-input').value = key;
+  toast('已生成随机密钥，点右侧 ✓ 添加');
+}
+function addApiKey(){
+  // 顶部按钮：直接生成并添加
+  genApiKey();
+  addApiKeyManual();
+}
+function addApiKeyManual(){
+  const input = $('new-apikey-input');
+  const key = input.value.trim();
+  if(!key){ toast('请输入或生成密钥','err'); return; }
+  if(!_config.api_keys) _config.api_keys = [];
+  if(_config.api_keys.includes(key)){ toast('密钥已存在','err'); return; }
+  _config.api_keys.push(key);
+  input.value = '';
+  renderApiKeys();
+  toast('密钥已添加（保存配置后生效）');
+}
+function deleteApiKey(i){
+  if(!confirm('确定删除此客户端密钥？使用该密钥的客户端将立即无法访问。')) return;
+  _config.api_keys.splice(i,1);
+  renderApiKeys();
+  toast('密钥已删除');
+}
+function copyApiKey(i){
+  const key = (_config.api_keys||[])[i];
+  if(!key) return;
+  navigator.clipboard.writeText(key).then(()=>toast('密钥已复制'));
 }
 
 async function saveConfig(){

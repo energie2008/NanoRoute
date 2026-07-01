@@ -5,11 +5,12 @@ log_level: info  # debug / info / warn
 # 默认密码: 123456，安装后请立即修改
 admin_password: "123456"
 
-# API 访问密钥列表（设置后调用/v1/*接口必须携带API Key）
-# 支持多个密钥，用Authorization: Bearer <your-key> 或 X-API-Key: <your-key> 头部传递
-# api_keys:
-#   - "sk-nanoroute-your-secret-key-here"
-#   - "sk-another-key-for-different-user"
+# 客户端 API 密钥列表（调用 /v1/* 接口鉴权）
+# 留空数组或不配置 = 不鉴权；配置后客户端需携带 Authorization: Bearer <key> 或 X-API-Key: <key>
+# 生成方式: openssl rand -hex 24
+api_keys: []
+  # - "sk-nanoroute-your-secret-key-here"
+  # - "sk-another-key-for-different-client"
 
 # 路由策略
 routing:
@@ -18,99 +19,65 @@ routing:
   combo_sticky_limit: 1            # Combo 内每模型使用次数
   fallback_on: [429, 503, 504]     # 触发 fallback 的状态码
 
-# Provider 定义（支持多账户多项目）
-providers:
-  - id: gemini-35-key1
-    type: gemini
-    api_key: "AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-    model: gemini-2.0-flash-exp
-    group: primary
-    weight: 1
+# Provider 提供商定义（行业标准：一个提供商 = 一个模型 + 多个 API Key 池）
+# - id: 提供商 ID，建议用「厂商短名+序号」如 gemini-1 / openrouter-main，勿用模型名
+# - label: 备注名，仅用于展示
+# - token_limit: 该提供商累计 token 上限，耗尽自动熔断（留空 = 不限）
+# - 同一提供商下多个 keys 自动轮询/故障转移（等价于 CLIProxyAPI 的 api-key-entries）
+provider_groups:
+  - id: gemini-1
+    type: google-gemini
+    model: gemini-2.0-flash
+    label: 主力 Gemini 池
+    priority: 2
     rpd_limit: 1500
     rpm_limit: 15
+    keys:
+      - id: key1
+        api_key: "AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+      - id: key2
+        api_key: "AIzaSyYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY"
+      - id: key3
+        api_key: "AIzaSyZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
 
-  - id: gemini-35-key2
-    type: gemini
-    api_key: "AIzaSyYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY"
-    model: gemini-2.0-flash-exp
-    group: primary
-    weight: 1
-    rpd_limit: 1500
+  - id: gemini-2
+    type: google-gemini
+    model: gemini-2.5-flash
+    label: 高配 Gemini 池
+    priority: 3
+    rpd_limit: 250
     rpm_limit: 15
+    token_limit: 1000000   # 累计 100 万 token 上限
+    keys:
+      - id: key1
+        api_key: "AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
-  - id: gemini-35-key3
-    type: gemini
-    api_key: "AIzaSyZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
-    model: gemini-2.0-flash-exp
-    group: primary
-    weight: 1
-    rpd_limit: 1500
-    rpm_limit: 15
+  - id: openrouter-1
+    type: openrouter
+    model: anthropic/claude-3.5-sonnet
+    label: Claude 中转
+    priority: 2
+    base_url: "https://openrouter.ai/api/v1"
+    keys:
+      - id: key1
+        api_key: "sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
-  - id: gemini-35-key4
-    type: gemini
-    api_key: "AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    model: gemini-2.0-flash-exp
-    group: primary
-    weight: 1
-    rpd_limit: 1500
-    rpm_limit: 15
-
-  - id: gemini-35-key5
-    type: gemini
-    api_key: "AIzaSyBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
-    model: gemini-2.0-flash-exp
-    group: primary
-    weight: 1
-    rpd_limit: 1500
-    rpm_limit: 15
-
-  - id: gemini-35-key6
-    type: gemini
-    api_key: "AIzaSyCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
-    model: gemini-2.0-flash-exp
-    group: primary
-    weight: 1
-    rpd_limit: 1500
-    rpm_limit: 15
-
-  - id: gemini-35-key7
-    type: gemini
-    api_key: "AIzaSyDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
-    model: gemini-2.0-flash-exp
-    group: primary
-    weight: 1
-    rpd_limit: 1500
-    rpm_limit: 15
-
-  - id: gemini-35-key8
-    type: gemini
-    api_key: "AIzaSyEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE"
-    model: gemini-2.0-flash-exp
-    group: primary
-    weight: 1
-    rpd_limit: 1500
-    rpm_limit: 15
-
-# Combo 定义（模型组合）
+# Combo 定义（跨厂商跨模型聚合路由）
 combos:
   - id: gemini-primary
-    models: 
-      - gemini-35-key1
-      - gemini-35-key2
-      - gemini-35-key3
-      - gemini-35-key4
-      - gemini-35-key5
-      - gemini-35-key6
-      - gemini-35-key7
-      - gemini-35-key8
     strategy: round-robin
+    members:
+      - group: gemini-1
+        weight: 1
+      - group: gemini-2
+        weight: 1
 
 # Model Alias（客户端发什么模型名都能正确路由）
 aliases:
   claude-sonnet-4: gemini-primary
   claude-sonnet-4-5: gemini-primary
-  claude-3-5-sonnet: gemini-primary
+  claude-3-5-sonnet: openrouter-1
   gpt-4o: gemini-primary
   gpt-4o-mini: gemini-primary
-  gemini-2.0-flash-exp: gemini-primary
+  gemini-2.0-flash: gemini-1
+  gemini-2.5-flash: gemini-2

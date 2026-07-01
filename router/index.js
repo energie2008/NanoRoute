@@ -167,6 +167,8 @@ export class Router {
 
   _filterAvailableTargets(targets, model, requiredCaps = { vision: false }) {
     const available = [];
+    // 单次过滤内按 group 缓存 token 用量，避免同组多 Key 重复查库
+    const groupTokenCache = new Map();
     for (const target of targets) {
       if (!this._providerSupportsCaps(target, requiredCaps)) {
         continue;
@@ -175,6 +177,22 @@ export class Router {
       const cbCheck = this.limiter.isAvailable(target.id, model);
       if (!cbCheck.available) {
         continue;
+      }
+
+      // Token 总额配额检查（按 Provider 分组聚合累计用量）
+      if (target.token_limit && target._group_id) {
+        let used = groupTokenCache.get(target._group_id);
+        if (used === undefined) {
+          try { used = this.db.getGroupTokenUsage(target._group_id); }
+          catch { used = 0; }
+          groupTokenCache.set(target._group_id, used);
+        }
+        target.token_used = used;
+        if (used >= target.token_limit) {
+          // 触发模型级锁定，等价于配额耗尽
+          this.limiter.recordError(target.id, model, ERROR_TYPES.QUOTA_EXCEEDED);
+          continue;
+        }
       }
 
       const quotaCheck = this.limiter.checkQuota(target.id, target.rpm_limit || null, target.rpd_limit || null);
