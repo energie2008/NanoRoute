@@ -15,6 +15,8 @@ export class BaseProvider {
     this.priority = config.priority || 1;
     this.weight = config.weight || 1;
     this.proxy = config.proxy;
+    // Phase 1.4: 模型能力声明(用于文本模型剥图等判断)
+    this._caps = Array.isArray(config.capabilities) ? config.capabilities : null;
   }
 
   getDefaultBaseUrl() {
@@ -176,5 +178,64 @@ export class BaseProvider {
   isFallbackable(err) {
     const classification = this.classifyError(err.status, err.message);
     return classification.fallbackable;
+  }
+
+  /**
+   * Phase 2.1: 归一化 usage(缓存三桶守恒)
+   *
+   * 上游 usage 字段不一致:
+   *   - Anthropic: input_tokens / cache_read_input_tokens / cache_creation_input_tokens / output_tokens
+   *   - OpenAI: prompt_tokens(含缓存) / completion_tokens
+   *   - Gemini: promptTokenCount / candidatesTokenCount / cachedContentTokenCount
+   *
+   * 归一化为统一格式:
+   *   { prompt_tokens, completion_tokens, total_tokens,
+   *     cache_read_tokens, cache_creation_tokens, real_input_tokens }
+   *
+   * 守恒公式: input + cache_read + cache_creation == prompt_tokens
+   */
+  _normalizeUsage(usage, providerType) {
+    if (!usage || typeof usage !== 'object') {
+      return { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0,
+               cache_read_tokens: 0, cache_creation_tokens: 0, real_input_tokens: 0 };
+    }
+
+    let promptTokens = 0;
+    let completionTokens = 0;
+    let cacheRead = 0;
+    let cacheCreation = 0;
+
+    if (providerType === 'anthropic' || usage.input_tokens !== undefined) {
+      // Anthropic 风格
+      promptTokens = usage.input_tokens || 0;
+      completionTokens = usage.output_tokens || 0;
+      cacheRead = usage.cache_read_input_tokens || 0;
+      cacheCreation = usage.cache_creation_input_tokens || 0;
+    } else if (providerType === 'gemini' || usage.promptTokenCount !== undefined) {
+      // Gemini 风格
+      promptTokens = usage.promptTokenCount || 0;
+      completionTokens = usage.candidatesTokenCount || 0;
+      cacheRead = usage.cachedContentTokenCount || 0;
+      cacheCreation = 0;
+    } else {
+      // OpenAI 风格(prompt_tokens 含缓存命中)
+      promptTokens = usage.prompt_tokens || 0;
+      completionTokens = usage.completion_tokens || 0;
+      cacheRead = usage.prompt_tokens_details?.cached_tokens || 0;
+      cacheCreation = 0;
+    }
+
+    // 守恒公式:real_input = prompt - cache_read - cache_creation(防下溢)
+    const realInput = Math.max(0, promptTokens - cacheRead - cacheCreation);
+    const total = promptTokens + completionTokens;
+
+    return {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: usage.total_tokens || total,
+      cache_read_tokens: cacheRead,
+      cache_creation_tokens: cacheCreation,
+      real_input_tokens: realInput,
+    };
   }
 }

@@ -125,7 +125,42 @@ export function initDB() {
     CREATE INDEX IF NOT EXISTS idx_ul_model ON usage_log(model);
     CREATE INDEX IF NOT EXISTS idx_ul_created ON usage_log(created_at);
     CREATE INDEX IF NOT EXISTS idx_providers_status ON providers(status);
+
+    -- Phase 2.2: 日聚合表(按 date + provider_id + model 聚合,快速查询仪表盘)
+    CREATE TABLE IF NOT EXISTS usage_daily (
+      date TEXT NOT NULL,                    -- YYYY-MM-DD (UTC)
+      provider_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      api_key_id TEXT,
+      request_count INTEGER DEFAULT 0,
+      success_count INTEGER DEFAULT 0,
+      error_count INTEGER DEFAULT 0,
+      prompt_tokens INTEGER DEFAULT 0,
+      completion_tokens INTEGER DEFAULT 0,
+      total_tokens INTEGER DEFAULT 0,
+      cache_read_tokens INTEGER DEFAULT 0,
+      cache_creation_tokens INTEGER DEFAULT 0,
+      real_input_tokens INTEGER DEFAULT 0,
+      updated_at INTEGER DEFAULT (strftime('%s','now')),
+      PRIMARY KEY (date, provider_id, model, api_key_id)
+    );
   `);
+
+  // Phase 2.2: Migration —— 给 usage_log 添加缓存三桶列(已存在则跳过)
+  {
+    const cols = db.pragma('table_info(usage_log)');
+    const colNames = new Set(cols.map(c => c.name));
+    const newCols = [
+      ['cache_read_tokens', 'INTEGER DEFAULT 0'],
+      ['cache_creation_tokens', 'INTEGER DEFAULT 0'],
+      ['real_input_tokens', 'INTEGER DEFAULT 0'],
+    ];
+    for (const [name, type] of newCols) {
+      if (!colNames.has(name)) {
+        db.exec(`ALTER TABLE usage_log ADD COLUMN ${name} ${type}`);
+      }
+    }
+  }
 
   statements = {
     insertProvider: db.prepare(`
@@ -143,11 +178,45 @@ export function initDB() {
       INSERT INTO usage_log
         (provider_id, model, api_key_id, status,
          prompt_tokens, completion_tokens, total_tokens,
+         cache_read_tokens, cache_creation_tokens, real_input_tokens,
          latency_ms, rtk_saved_bytes, error)
       VALUES
         (@provider_id, @model, @api_key_id, @status,
          @prompt_tokens, @completion_tokens, @total_tokens,
+         @cache_read_tokens, @cache_creation_tokens, @real_input_tokens,
          @latency_ms, @rtk_saved_bytes, @error)
+    `),
+    // Phase 2.2: 日聚合 upsert(累加)
+    upsertDailyUsage: db.prepare(`
+      INSERT INTO usage_daily
+        (date, provider_id, model, api_key_id,
+         request_count, success_count, error_count,
+         prompt_tokens, completion_tokens, total_tokens,
+         cache_read_tokens, cache_creation_tokens, real_input_tokens)
+      VALUES
+        (@date, @provider_id, @model, @api_key_id,
+         @request_count, @success_count, @error_count,
+         @prompt_tokens, @completion_tokens, @total_tokens,
+         @cache_read_tokens, @cache_creation_tokens, @real_input_tokens)
+      ON CONFLICT(date, provider_id, model, api_key_id) DO UPDATE SET
+        request_count = request_count + excluded.request_count,
+        success_count = success_count + excluded.success_count,
+        error_count = error_count + excluded.error_count,
+        prompt_tokens = prompt_tokens + excluded.prompt_tokens,
+        completion_tokens = completion_tokens + excluded.completion_tokens,
+        total_tokens = total_tokens + excluded.total_tokens,
+        cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
+        cache_creation_tokens = cache_creation_tokens + excluded.cache_creation_tokens,
+        real_input_tokens = real_input_tokens + excluded.real_input_tokens,
+        updated_at = strftime('%s','now')
+    `),
+    getDailyUsage: db.prepare(`
+      SELECT * FROM usage_daily WHERE date >= ? AND date <= ?
+      ORDER BY date DESC, total_tokens DESC
+    `),
+    getDailyUsageByProvider: db.prepare(`
+      SELECT * FROM usage_daily WHERE provider_id = ? AND date >= ? AND date <= ?
+      ORDER BY date DESC
     `),
     v1upsertUsage: db.prepare(`
       INSERT INTO usage_log (provider_id, model, prompt_tokens, completion_tokens, latency_ms, status, error, created_at)
@@ -375,17 +444,43 @@ class NanoDB {
   }
 
   logRequest(entry) {
+    const promptTokens = entry.prompt_tokens || 0;
+    const completionTokens = entry.completion_tokens || 0;
+    const cacheRead = entry.cache_read_tokens || 0;
+    const cacheCreation = entry.cache_creation_tokens || 0;
     this.stmt.upsertUsageLog.run({
       provider_id: entry.provider_id || '',
       model: entry.model || '',
       api_key_id: entry.api_key_id || null,
       status: entry.status || 0,
-      prompt_tokens: entry.prompt_tokens || 0,
-      completion_tokens: entry.completion_tokens || 0,
-      total_tokens: (entry.prompt_tokens || 0) + (entry.completion_tokens || 0),
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: entry.total_tokens || (promptTokens + completionTokens),
+      cache_read_tokens: cacheRead,
+      cache_creation_tokens: cacheCreation,
+      real_input_tokens: entry.real_input_tokens || Math.max(0, promptTokens - cacheRead - cacheCreation),
       latency_ms: entry.latency_ms || 0,
       rtk_saved_bytes: entry.rtk_saved_bytes || 0,
       error: entry.error || null,
+    });
+
+    // Phase 2.2: 同步写入日聚合表
+    const date = new Date().toISOString().slice(0, 10);
+    const isSuccess = (entry.status || 0) >= 200 && (entry.status || 0) < 300;
+    this.stmt.upsertDailyUsage.run({
+      date,
+      provider_id: entry.provider_id || '',
+      model: entry.model || '',
+      api_key_id: entry.api_key_id || null,
+      request_count: 1,
+      success_count: isSuccess ? 1 : 0,
+      error_count: isSuccess ? 0 : 1,
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: entry.total_tokens || (promptTokens + completionTokens),
+      cache_read_tokens: cacheRead,
+      cache_creation_tokens: cacheCreation,
+      real_input_tokens: entry.real_input_tokens || Math.max(0, promptTokens - cacheRead - cacheCreation),
     });
   }
 

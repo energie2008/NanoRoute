@@ -6,6 +6,8 @@ import { Router } from './router/index.js';
 import { AdminAPI } from './api/index.js';
 import { parseBody, sendJSON, sendError, handleCORS } from './utils/http.js';
 import { initDB, closeDB } from './state/db.js';
+import { resolvePreset } from './state/model-presets.js';
+import { getEventBus } from './state/events.js';
 import { setGlobalProxy as initProxyPool } from './proxy/pool.js';
 import { MCPServer } from './mcp/index.js';
 import { dirname, join } from 'node:path';
@@ -155,6 +157,56 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    // Phase 2.3: 实时事件 SSE 端点(管理员认证已通过,200ms 防抖)
+    if (path === '/api/events') {
+      const bus = getEventBus();
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
+
+      let buffer = [];
+      let timer = null;
+
+      const flush = () => {
+        if (buffer.length === 0) return;
+        const events = buffer;
+        buffer = [];
+        try {
+          res.write(`data: ${JSON.stringify(events)}\n\n`);
+        } catch {}
+      };
+
+      const handler = (event) => {
+        buffer.push(event);
+        if (!timer) {
+          timer = setTimeout(() => {
+            timer = null;
+            flush();
+          }, 200);
+        }
+      };
+
+      bus.on('event', handler);
+
+      // 心跳(每 30s,防止代理/CDN 断开空闲连接)
+      const heartbeat = setInterval(() => {
+        try { res.write(': heartbeat\n\n'); } catch {}
+      }, 30000);
+
+      // 立即推送一次 hello,让客户端确认连接成功
+      res.write(`data: ${JSON.stringify([{ type: 'hello', data: {}, ts: Date.now() }])}\n\n`);
+
+      req.on('close', () => {
+        bus.off('event', handler);
+        clearInterval(heartbeat);
+        if (timer) { clearTimeout(timer); timer = null; }
+      });
+      return;
+    }
+
     if (path.startsWith('/api/')) {
       await api.handle(req, res);
       return;
@@ -224,12 +276,19 @@ const server = createServer(async (req, res) => {
         .filter(p => p.enabled !== false)
         .forEach(p => {
           if (!modelMap.has(p.model)) {
+            // 能力合并:用户显式 capabilities + preset 自动补全(function_calling/reasoning 等)
+            // Trae / Cursor 等 Agent 客户端通过此处 capabilities 探测是否启用 Agent 模式
+            const preset = resolvePreset(p.model, p.vendor_type || p.type);
+            const mergedCaps = Array.from(new Set([
+              ...(p.capabilities || []),
+              ...(preset?.capabilities || [])
+            ]));
             modelMap.set(p.model, {
               id: p.model,
               object: 'model',
               created: 0,
               owned_by: p.vendor_type || p.type,
-              capabilities: p.capabilities || [],
+              capabilities: mergedCaps,
               nano_meta: {
                 provider_count: providers.filter(x => x.model === p.model && x.enabled !== false).length,
                 type: p.vendor_type || p.type

@@ -6,6 +6,8 @@ import { getLimiter, ERROR_TYPES } from '../state/limiter.js';
 import { acquireConcurrency, releaseConcurrency } from '../state/concurrency.js';
 import { sendError } from '../utils/http.js';
 import { resolvePreset } from '../state/model-presets.js';
+import { getRectifier } from './rectifier.js';
+import { publishEvent } from '../state/events.js';
 
 let _FusionHandlerClass = null;
 let _rtkLoaded = false;
@@ -212,15 +214,19 @@ export class Router {
   }
 
   async _tryProvider(target, req, res, parsedRequest, startTime, isStream, groupIdx, providerIdx, totalGroups) {
-    const { model, messages, options } = parsedRequest;
+    const { model, options } = parsedRequest;
+    // Phase 1.5: 整流器可修改 messages/options 后重试一次,用 local* 变量承载
+    let localMessages = parsedRequest.messages;
+    let localOptions = options;
+    let rectified = false;
     const retryTransient = this.config.routing?.retry_transient ?? true;
-    
+
     if (target._group_id && target.max_concurrency) {
       if (!acquireConcurrency(target._group_id, target.max_concurrency)) {
         return { success: false, error: new Error('Concurrency limit reached') };
       }
     }
-    
+
     const provider = await this._getProviderInstance(target);
     let attempt = 0;
 
@@ -230,7 +236,7 @@ export class Router {
         this.strategy.recordUse(target.id);
 
         if (isStream) {
-          const streamRes = await provider.chatCompletionStream(messages, { ...options, model: target.model });
+          const streamRes = await provider.chatCompletionStream(localMessages, { ...localOptions, model: target.model });
           return {
             success: true,
             isStream: true,
@@ -239,7 +245,7 @@ export class Router {
             provider
           };
         } else {
-          const result = await provider.chatCompletion(messages, { ...options, model: target.model });
+          const result = await provider.chatCompletion(localMessages, { ...localOptions, model: target.model });
           if (target._group_id) releaseConcurrency(target._group_id);
           return {
             success: true,
@@ -250,10 +256,29 @@ export class Router {
           };
         }
       } catch (err) {
+        // ── Phase 1.5: 反应式整流器
+        // 检测 signature/budget/media 等错误模式,自动修复请求体并重试一次(不计入 transient retry)
+        if (!rectified) {
+          const rectifier = getRectifier();
+          const fakeBody = { messages: localMessages, ...localOptions };
+          const fix = rectifier.tryRectify(err.message || '', fakeBody);
+          if (fix.rectified) {
+            rectified = true;
+            if (fix.body.messages) localMessages = fix.body.messages;
+            localOptions = { ...localOptions };
+            if (fix.body.thinking !== undefined) localOptions.thinking = fix.body.thinking;
+            if (fix.body.max_tokens !== undefined) localOptions.max_tokens = fix.body.max_tokens;
+            if (fix.body.tools !== undefined) localOptions.tools = fix.body.tools;
+            // 重置 attempt,允许整流后的请求再走一次完整 retry 流程
+            attempt = 0;
+            continue;
+          }
+        }
+
         if (target._group_id && attempt >= (retryTransient ? 2 : 1)) {
           releaseConcurrency(target._group_id);
         }
-        
+
         const errClass = this.limiter.classifyError(err.status || 0, err.message);
         const canRetry = retryTransient && errClass === ERROR_TYPES.TRANSIENT && attempt < 2;
         if (canRetry) {
@@ -283,6 +308,13 @@ export class Router {
         });
         this._updateProviderStats(target.id, latency, false, 0);
 
+        // Phase 2.3: 发布请求错误事件
+        publishEvent('request_error', {
+          provider_id: target.id, model: target.model,
+          status: err.status || 502, error: err.message,
+          error_type: errClass, latency_ms: latency,
+        });
+
         if (errClass === ERROR_TYPES.BAD_REQUEST) {
           return { success: false, error: err, fatal: true };
         }
@@ -304,6 +336,8 @@ export class Router {
       });
 
       let finished = false;
+      // Phase 2.2: 从流末 usage chunk 提取 usage(choices=[] 且带 usage 字段)
+      let streamUsage = null;
 
       const releaseConcurrencyOnce = () => {
         if (target._group_id) releaseConcurrency(target._group_id);
@@ -311,6 +345,19 @@ export class Router {
 
       result.stream.on('data', (chunk) => {
         if (!res.writableEnded) res.write(chunk);
+        // 解析 SSE chunk,提取 usage(不消费 chunk,仅旁路解析)
+        try {
+          const text = chunk.toString();
+          for (const line of text.split('\n')) {
+            if (!line.startsWith('data: ') || line.includes('[DONE]')) continue;
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.usage && (!data.choices || data.choices.length === 0)) {
+                streamUsage = data.usage;
+              }
+            } catch {}
+          }
+        } catch {}
       });
 
       result.stream.on('end', () => {
@@ -318,11 +365,24 @@ export class Router {
         finished = true;
         releaseConcurrencyOnce();
         const latency = Date.now() - startTime;
+        // Phase 2.2: 用流末提取的 usage 记录完整 token 用量
+        const tokensIn = streamUsage?.prompt_tokens || 0;
+        const tokensOut = streamUsage?.completion_tokens || 0;
+        const totalTokens = streamUsage?.total_tokens || (tokensIn + tokensOut);
+        const cacheRead = streamUsage?.cache_read_tokens || 0;
+        const cacheCreation = streamUsage?.cache_creation_tokens || 0;
+        const realInput = streamUsage?.real_input_tokens || 0;
         this.limiter.recordSuccess(target.id, target.model);
         logRequest({
           provider_id: target.id,
           model: target.model,
           status: 200,
+          prompt_tokens: tokensIn,
+          completion_tokens: tokensOut,
+          total_tokens: totalTokens,
+          cache_read_tokens: cacheRead,
+          cache_creation_tokens: cacheCreation,
+          real_input_tokens: realInput,
           latency_ms: latency,
           error: null
         });
@@ -333,12 +393,22 @@ export class Router {
           status: 200,
           provider: target.id,
           latency: latency,
-          tokens: 0,
+          tokens: totalTokens,
+          tokens_in: tokensIn,
+          tokens_out: tokensOut,
           stream: true,
           bridge: parsedRequest._bridge
         });
-        this._updateProviderStats(target.id, latency, true, 0);
+        this._updateProviderStats(target.id, latency, true, totalTokens);
         if (!res.writableEnded) res.end();
+
+        // Phase 2.3: 发布实时事件
+        publishEvent('request_complete', {
+          provider_id: target.id, model: target.model, stream: true,
+          prompt_tokens: tokensIn, completion_tokens: tokensOut, total_tokens: totalTokens,
+          cache_read_tokens: cacheRead, cache_creation_tokens: cacheCreation,
+          latency_ms: latency,
+        });
       });
 
       result.stream.on('error', (err) => {
@@ -373,9 +443,14 @@ export class Router {
       });
     } else {
       const latency = Date.now() - startTime;
-      const tokensIn = result.result.usage?.prompt_tokens || 0;
-      const tokensOut = result.result.usage?.completion_tokens || 0;
-      const totalTokens = tokensIn + tokensOut;
+      // Phase 2.2: 提取归一化 usage 的完整字段(含缓存三桶)
+      const usage = result.result.usage || {};
+      const tokensIn = usage.prompt_tokens || 0;
+      const tokensOut = usage.completion_tokens || 0;
+      const totalTokens = usage.total_tokens || (tokensIn + tokensOut);
+      const cacheRead = usage.cache_read_tokens || 0;
+      const cacheCreation = usage.cache_creation_tokens || 0;
+      const realInput = usage.real_input_tokens || 0;
       this.limiter.recordSuccess(target.id, target.model);
       logRequest({
         provider_id: target.id,
@@ -383,6 +458,10 @@ export class Router {
         status: 200,
         prompt_tokens: tokensIn,
         completion_tokens: tokensOut,
+        total_tokens: totalTokens,
+        cache_read_tokens: cacheRead,
+        cache_creation_tokens: cacheCreation,
+        real_input_tokens: realInput,
         latency_ms: latency,
         error: null
       });
@@ -403,6 +482,14 @@ export class Router {
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result.result));
+
+      // Phase 2.3: 发布实时事件
+      publishEvent('request_complete', {
+        provider_id: target.id, model: target.model, stream: false,
+        prompt_tokens: tokensIn, completion_tokens: tokensOut, total_tokens: totalTokens,
+        cache_read_tokens: cacheRead, cache_creation_tokens: cacheCreation,
+        latency_ms: latency,
+      });
     }
   }
 

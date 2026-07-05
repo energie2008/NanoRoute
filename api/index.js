@@ -4,6 +4,11 @@ import { getDB, getModelBreakdown, getRecentErrorsList, getRtkStats } from '../s
 import { parseBody, sendJSON, sendError } from '../utils/http.js';
 import { getPoolStatus, getDispatcher } from '../proxy/pool.js';
 import { Router } from '../router/index.js';
+import { listPresets } from '../state/provider-presets.js';
+import {
+  getDailyUsage, getDailyUsageByProvider, getUsageSummary,
+  getUsageByProvider, getUsageByModel, getCacheHitRate
+} from '../state/usage-store.js';
 
 const _sendJSON = (res, data, status = 200) => {
   const body = JSON.stringify(data);
@@ -329,6 +334,71 @@ export class AdminAPI {
         const hours = parseInt(url.searchParams.get('hours') || '24');
         const rows = getRecentErrorsList(hours);
         _sendJSON(res, { ok: true, errors: rows });
+      } catch (err) {
+        _sendError(res, 500, err.message);
+      }
+      return;
+    }
+
+    // ── Phase 3.2: Provider Presets 目录(添加 provider 时选择) ──
+    if (method === 'GET' && path === '/api/provider-presets') {
+      try {
+        _sendJSON(res, { ok: true, presets: listPresets() });
+      } catch (err) {
+        _sendError(res, 500, err.message);
+      }
+      return;
+    }
+
+    // ── Phase 2.2: 双表用量统计查询 API ──
+    if (method === 'GET' && path === '/api/usage/daily') {
+      try {
+        const days = parseInt(url.searchParams.get('days') || '7');
+        const providerId = url.searchParams.get('provider_id');
+        const rows = providerId
+          ? getDailyUsageByProvider(providerId, days)
+          : getDailyUsage(days);
+        _sendJSON(res, { ok: true, rows });
+      } catch (err) {
+        _sendError(res, 500, err.message);
+      }
+      return;
+    }
+
+    if (method === 'GET' && path === '/api/usage/summary') {
+      try {
+        const days = parseInt(url.searchParams.get('days') || '7');
+        _sendJSON(res, { ok: true, summary: getUsageSummary(days) });
+      } catch (err) {
+        _sendError(res, 500, err.message);
+      }
+      return;
+    }
+
+    if (method === 'GET' && path === '/api/usage/by-provider') {
+      try {
+        const days = parseInt(url.searchParams.get('days') || '7');
+        _sendJSON(res, { ok: true, rows: getUsageByProvider(days) });
+      } catch (err) {
+        _sendError(res, 500, err.message);
+      }
+      return;
+    }
+
+    if (method === 'GET' && path === '/api/usage/by-model') {
+      try {
+        const days = parseInt(url.searchParams.get('days') || '7');
+        _sendJSON(res, { ok: true, rows: getUsageByModel(days) });
+      } catch (err) {
+        _sendError(res, 500, err.message);
+      }
+      return;
+    }
+
+    if (method === 'GET' && path === '/api/usage/cache-hit-rate') {
+      try {
+        const days = parseInt(url.searchParams.get('days') || '7');
+        _sendJSON(res, { ok: true, ...getCacheHitRate(days) });
       } catch (err) {
         _sendError(res, 500, err.message);
       }
