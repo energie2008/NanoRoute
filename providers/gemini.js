@@ -31,7 +31,9 @@ export class GeminiProvider extends BaseProvider {
 
   _buildUrl(model, stream = false) {
     const action = stream ? 'streamGenerateContent' : 'generateContent';
-    return `/v1beta/models/${model}:${action}?key=${this.apiKey}&alt=sse`;
+    // alt=sse 仅用于流式;非流式若带 alt=sse 会返回 SSE 格式,导致 JSON 解析失败
+    const altParam = stream ? '&alt=sse' : '';
+    return `/v1beta/models/${model}:${action}?key=${this.apiKey}${altParam}`;
   }
 
   _generateStableId() {
@@ -136,12 +138,17 @@ export class GeminiProvider extends BaseProvider {
             } catch {
               args = { _raw: tc.function.arguments };
             }
-            parts.push({
+            const fcPart = {
               functionCall: {
                 name: tc.function.name,
                 args
               }
-            });
+            };
+            // 回传 functionCall 关联的 thoughtSignature(Gemini thinking 模型多轮必需)
+            if (tc.thought_signature) {
+              fcPart.thoughtSignature = tc.thought_signature;
+            }
+            parts.push(fcPart);
           }
         }
 
@@ -270,14 +277,20 @@ export class GeminiProvider extends BaseProvider {
 
       // function call → tool_call
       if (p.functionCall && p.functionCall.name) {
-        toolCalls.push({
+        const tc = {
           id: `call_${idx}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
           type: 'function',
           function: {
             name: p.functionCall.name,
             arguments: JSON.stringify(p.functionCall.args || {})
           }
-        });
+        };
+        // Gemini thinking 模型:functionCall part 可能带 thoughtSignature
+        // 多轮回传时必须携带,否则 Gemini API 返回 400
+        if (p.thoughtSignature) {
+          tc.thought_signature = p.thoughtSignature;
+        }
+        toolCalls.push(tc);
       }
     });
 
@@ -447,6 +460,10 @@ export class GeminiProvider extends BaseProvider {
           const existing = toolCallBuffer.get(idx);
           if (p.functionCall.args) {
             existing.function.arguments = JSON.stringify(p.functionCall.args);
+          }
+          // Gemini thinking 模型:functionCall part 可能带 thoughtSignature
+          if (p.thoughtSignature) {
+            existing.thought_signature = p.thoughtSignature;
           }
         }
       }

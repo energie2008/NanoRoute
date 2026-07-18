@@ -262,13 +262,26 @@ export class Router {
           const rectifier = getRectifier();
           const fakeBody = { messages: localMessages, ...localOptions };
           const fix = rectifier.tryRectify(err.message || '', fakeBody);
+          console.log(`[Rectifier DEBUG] target=${target.id} status=${err.status} msg="${(err.message||'').slice(0,80)}" rectified=${fix.rectified} name=${fix.rectifierName}`);
           if (fix.rectified) {
             rectified = true;
             if (fix.body.messages) localMessages = fix.body.messages;
             localOptions = { ...localOptions };
-            if (fix.body.thinking !== undefined) localOptions.thinking = fix.body.thinking;
-            if (fix.body.max_tokens !== undefined) localOptions.max_tokens = fix.body.max_tokens;
-            if (fix.body.tools !== undefined) localOptions.tools = fix.body.tools;
+            // signature 整流器:主动清理所有 thinking 触发字段
+            // 否则 stripThinkingBlocks 删除的 thinking/reasoning_effort 不会同步到 localOptions,
+            // gemini.js _buildRequestBody 会用原 reasoning_effort 重新生成 thinkingConfig,
+            // Gemini 再次要求 thought_signature → 400
+            if (fix.rectifierName === 'signature') {
+              delete localOptions.thinking;
+              delete localOptions.reasoning_effort;
+              delete localOptions.enable_thinking;
+              delete localOptions.output_config;
+              delete localOptions.reasoning;
+            } else {
+              if (fix.body.thinking !== undefined) localOptions.thinking = fix.body.thinking;
+              if (fix.body.max_tokens !== undefined) localOptions.max_tokens = fix.body.max_tokens;
+              if (fix.body.tools !== undefined) localOptions.tools = fix.body.tools;
+            }
             // 重置 attempt,允许整流后的请求再走一次完整 retry 流程
             attempt = 0;
             continue;

@@ -21,6 +21,8 @@ const SIGNATURE_ERROR_PATTERNS = [
   /signature.*required/i,
   /signature field is required/i,
   /thinking.*signature/i,
+  /thought_signature/i,                        // Gemini: "missing a thought_signature"
+  /Function call is missing.*thought_signature/i,
   /must start with (a )?thinking/i,
   /expected thinking.*found/i,
   /cannot be modified/i,
@@ -55,29 +57,51 @@ function stripThinkingBlocks(body) {
 
   // 移除顶层 thinking 字段
   delete newBody.thinking;
+  // 移除顶层 reasoning_effort(避免重新触发 thinking)
+  delete newBody.reasoning_effort;
 
-  // 移除 messages 中的 thinking blocks
+  // 移除 messages 中的 thinking blocks / reasoning_content / tool_calls.thought_signature
   if (Array.isArray(newBody.messages)) {
     newBody.messages = newBody.messages.map(msg => {
       if (!msg || typeof msg !== 'object') return msg;
-      if (!Array.isArray(msg.content)) return msg;
+      const newMsg = { ...msg };
 
-      const newContent = msg.content.filter(block =>
-        !(block && (block.type === 'thinking' || block.type === 'redacted_thinking'))
-      ).map(block => {
-        // 移除非 thinking block 上的 signature 字段
-        if (block && typeof block === 'object' && 'signature' in block) {
-          const { signature, ...rest } = block;
+      // 剥离 reasoning_content / reasoning_signature(对应 Gemini thought parts / Anthropic thinking blocks)
+      // Gemini thinking 模型要求 functionCall 携带 thoughtSignature,客户端不回传时剥离 thought 信号让模型重新思考
+      delete newMsg.reasoning_content;
+      delete newMsg.reasoning_signature;
+
+      // 剥离 tool_calls 的 thought_signature(Gemini functionCall 关联的 signature)
+      if (Array.isArray(newMsg.tool_calls)) {
+        newMsg.tool_calls = newMsg.tool_calls.map(tc => {
+          if (!tc || typeof tc !== 'object') return tc;
+          const { thought_signature, ...rest } = tc;
           return rest;
-        }
-        return block;
-      });
-
-      // 如果 content 为空,保留至少一个 text block
-      if (newContent.length === 0) {
-        return { ...msg, content: [{ type: 'text', text: '' }] };
+        });
       }
-      return { ...msg, content: newContent };
+
+      // 过滤 content 数组中的 thinking blocks(Anthropic 风格)
+      if (Array.isArray(newMsg.content)) {
+        const newContent = newMsg.content.filter(block =>
+          !(block && (block.type === 'thinking' || block.type === 'redacted_thinking'))
+        ).map(block => {
+          // 移除非 thinking block 上的 signature 字段
+          if (block && typeof block === 'object' && 'signature' in block) {
+            const { signature, ...rest } = block;
+            return rest;
+          }
+          return block;
+        });
+
+        // 如果 content 为空,保留至少一个 text block
+        if (newContent.length === 0) {
+          newMsg.content = [{ type: 'text', text: '' }];
+        } else {
+          newMsg.content = newContent;
+        }
+      }
+
+      return newMsg;
     });
   }
 
@@ -207,11 +231,11 @@ class RectifierRegistry {
     for (const r of this.rectifiers) {
       if (r.patterns.some(p => p.test(msg))) {
         const newBody = r.rectify(requestBody);
-        // 简单 diff 判断是否生效
-        if (JSON.stringify(newBody) !== JSON.stringify(requestBody)) {
-          this._appliedCount.set(r.name, (this._appliedCount.get(r.name) || 0) + 1);
-          return { rectified: true, body: newBody, rectifierName: r.name };
-        }
+        // 模式匹配即视为整流生效,即使 body 看似无变化
+        // (客户端可能未回传 reasoning_content/thought_signature,messages 表面无变化,
+        //  但 signature 错误仍需通过清理 localOptions.thinking/reasoning_effort 来禁用 thinkingConfig)
+        this._appliedCount.set(r.name, (this._appliedCount.get(r.name) || 0) + 1);
+        return { rectified: true, body: newBody, rectifierName: r.name };
       }
     }
 
