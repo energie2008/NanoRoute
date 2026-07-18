@@ -1,26 +1,37 @@
-FROM node:22-alpine
+FROM golang:1.26-bookworm AS builder
 
 WORKDIR /app
 
-# Install dependencies first (better caching)
-COPY package*.json ./
-RUN npm install --production
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential git && rm -rf /var/lib/apt/lists/*
 
-# Copy application files
+COPY go.mod go.sum ./
+
+RUN go mod download
+
 COPY . .
 
-# Create data directory
-RUN mkdir -p /app/data
+ARG VERSION=dev
+ARG COMMIT=none
+ARG BUILD_DATE=unknown
 
-# Set default port
-ENV PORT=30128
+RUN CGO_ENABLED=1 GOOS=linux go build -buildvcs=false -ldflags="-s -w -X 'main.Version=${VERSION}' -X 'main.Commit=${COMMIT}' -X 'main.BuildDate=${BUILD_DATE}'" -o ./CLIProxyAPI ./cmd/server/
 
-# Expose port
-EXPOSE 30128
+FROM debian:bookworm
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "fetch('http://localhost:30128/healthz').catch(()=>process.exit(1))"
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata ca-certificates && rm -rf /var/lib/apt/lists/*
 
-# Start server
-CMD ["node", "server.js"]
+RUN mkdir /CLIProxyAPI
+
+COPY --from=builder ./app/CLIProxyAPI /CLIProxyAPI/CLIProxyAPI
+
+COPY config.example.yaml /CLIProxyAPI/config.example.yaml
+
+WORKDIR /CLIProxyAPI
+
+EXPOSE 8317
+
+ENV TZ=Asia/Shanghai
+
+RUN cp /usr/share/zoneinfo/${TZ} /etc/localtime && echo "${TZ}" > /etc/timezone
+
+CMD ["./CLIProxyAPI"]
