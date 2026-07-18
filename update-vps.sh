@@ -35,7 +35,7 @@ echo -e "${BLUE}===========================================${NC}"
 echo "安装目录 : $INSTALL_DIR"
 echo "仓库     : $REPO_URL ($BRANCH)"
 echo "旧容器   : $OLD_CONTAINER (Node.js, 端口 30128)"
-echo "新容器   : $NEW_CONTAINER (Go, 端口 8317)"
+echo "新容器   : $NEW_CONTAINER (Go, 宿主机端口 40080 -> 容器 8317)"
 echo ""
 
 # 前置检查
@@ -129,7 +129,7 @@ sleep 4
 if docker ps --format '{{.Names}}' | grep -qw "^${NEW_CONTAINER}$"; then
     HEALTHY=""
     for i in 1 2 3 4 5; do
-        if curl -sf -o /dev/null --max-time 3 "http://127.0.0.1:8317/v1/models" 2>/dev/null; then
+        if curl -sf -o /dev/null --max-time 3 "http://127.0.0.1:40080/v1/models" 2>/dev/null; then
             HEALTHY="yes"
             break
         fi
@@ -141,7 +141,7 @@ if docker ps --format '{{.Names}}' | grep -qw "^${NEW_CONTAINER}$"; then
     echo -e "${GREEN} 部署成功!${NC}"
     echo -e "${GREEN}===========================================${NC}"
     echo "容器名     : $NEW_CONTAINER"
-    echo "API 端口   : 8317 (OpenAI/Gemini/Claude/Codex 兼容)"
+    echo "API 端口   : 40080 (宿主机) -> 8317 (容器内, OpenAI/Gemini/Claude/Codex 兼容)"
     echo "             8085 / 1455 / 54545 / 51121 / 11451 (其他端口)"
     if [ -n "$HEALTHY" ]; then
         ok "健康检查通过 (/v1/models 可访问)"
@@ -162,7 +162,7 @@ if docker ps --format '{{.Names}}' | grep -qw "^${NEW_CONTAINER}$"; then
     echo "  3. 将 OAuth 凭据放入 $INSTALL_DIR/auths/ (如需 Claude/Codex OAuth)"
     echo ""
     IP=$(hostname -I 2>/dev/null | awk '{print $1}')
-    [ -n "$IP" ] && echo "访问地址 : http://$IP:8317"
+    [ -n "$IP" ] && echo "访问地址 : http://$IP:40080"
     echo -e "${GREEN}===========================================${NC}"
 else
     err "容器启动失败, 最近日志:"
